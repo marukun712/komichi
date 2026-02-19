@@ -1,6 +1,6 @@
-import { sha256 } from "@noble/hashes/sha2.js";
+import { md5 } from "@noble/hashes/legacy.js";
 
-type Bit = 0 | 1;
+export type Bit = 0 | 1;
 
 export function getWeights(text: string, ngram: number) {
 	const split: string[] = [];
@@ -13,7 +13,7 @@ export function getWeights(text: string, ngram: number) {
 	split.forEach((s) => {
 		const bits: number[] = [];
 		const buf = new TextEncoder().encode(s);
-		const hash = sha256(buf);
+		const hash = md5(buf);
 		hash.forEach((b) => {
 			for (let i = 7; i >= 0; i--) {
 				bits.push((b >> i) & 1);

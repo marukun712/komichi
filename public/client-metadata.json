@@ -1,6 +1,6 @@
 {
 	"client_id": "http://localhost:3000/client-metadata.json",
-	"client_name": "Michi",
+	"client_name": "komichi",
 	"client_uri": "http://localhost:3000",
 	"redirect_uris": ["https://localhost:3000/callback"],
 	"scope": "atproto",
