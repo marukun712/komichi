@@ -7,9 +7,11 @@ import { resolveProfile, resolveRecords } from "../lib/Resolver";
 import { type Bit, getHash, getWeights, hammingDistance } from "../lib/SimHash";
 
 export default function Posts(props: { agent: Agent }) {
-	const [referenceHash, setReferenceHash] = createSignal<Bit[]>([]);
-	const [visited, setVisited] = createSignal<string[]>([]);
-	const [currentDid, setCurrentDid] = createSignal<string>("");
+	let currentDid = "";
+	let currentHash: Bit[] = [];
+	const visited: string[] = [];
+
+	const [loaded, setLoaded] = createSignal<boolean>(false);
 	const [foundPosts, setFoundPosts] = createSignal<
 		{
 			distance: number;
@@ -38,7 +40,7 @@ export default function Posts(props: { agent: Agent }) {
 		});
 
 		const h = getHash(weights);
-		setReferenceHash(h);
+		currentHash = h;
 
 		for (const record of posts.data.records) {
 			if (is(AppBskyFeedPost.mainSchema, record.value)) {
@@ -48,20 +50,21 @@ export default function Posts(props: { agent: Agent }) {
 					const uri = parseResourceUri(target);
 					if (uri.ok) {
 						const did = uri.value.repo;
-						setCurrentDid(did);
+						currentDid = did;
+						setLoaded(true);
 						break;
 					}
 				}
 			}
 		}
 
-		if (!currentDid()) {
+		if (!currentDid) {
 			setErrorMessage("リプライ先が見つかりませんでした");
 		}
 	});
 
 	const searchNext = async () => {
-		const did = currentDid();
+		const did = currentDid;
 		if (!did) {
 			setErrorMessage("探索を続行できません");
 			return;
@@ -82,14 +85,18 @@ export default function Posts(props: { agent: Agent }) {
 				return;
 			}
 
-			const posts = res;
-			const distances: {
-				uri: string;
+			const posts: {
 				post: AppBskyFeedPost.Main;
+				uri: string;
+				distance: number;
+			}[] = [];
+			const replies: {
+				post: AppBskyFeedPost.Main;
+				uri: string;
 				distance: number;
 			}[] = [];
 
-			for (const record of posts.data.records) {
+			for (const record of res.data.records) {
 				if (!is(AppBskyFeedPost.mainSchema, record.value)) continue;
 
 				const text = record.value.text;
@@ -97,19 +104,28 @@ export default function Posts(props: { agent: Agent }) {
 				if (!text) continue;
 
 				const w = getWeights(text, 5);
+
 				if (w.length === 0) continue;
-				if (referenceHash().length === 0) continue;
-				if (visited().includes(record.uri)) continue;
+				if (currentHash.length === 0) continue;
+				if (visited.includes(record.uri)) continue;
 
 				const h = getHash(w);
-				const distance = hammingDistance(referenceHash(), h);
+				const distance = hammingDistance(currentHash, h);
 
-				distances.push({ uri: record.uri, post: record.value, distance });
+				posts.push({ post: record.value, uri: record.uri, distance });
+
+				if (record.value.reply) {
+					replies.push({ post: record.value, uri: record.uri, distance });
+				}
 			}
 
-			distances.sort((a, b) => a.distance - b.distance);
+			posts.sort((a, b) => a.distance - b.distance);
+			replies.sort((a, b) => a.distance - b.distance);
 
-			if (distances[0]) {
+			const bestPost = posts[0];
+			const bestReply = replies[0];
+
+			if (bestPost) {
 				const profile = await resolveProfile(did);
 				if (
 					!profile.ok ||
@@ -122,23 +138,22 @@ export default function Posts(props: { agent: Agent }) {
 				setFoundPosts((prev) => [
 					...prev,
 					{
-						distance: distances[0].distance,
+						distance: bestPost.distance,
 						did,
 						profile: actorProfile,
-						post: distances[0].post,
+						post: bestPost.post,
 					},
 				]);
-				setVisited((prev) => [...prev, distances[0].uri]);
+				visited.push(bestPost.uri);
 			}
 
-			for (const record of posts.data.records) {
-				if (!is(AppBskyFeedPost.mainSchema, record.value)) continue;
-				const reply = record.value.reply;
+			if (bestReply) {
+				const reply = bestReply.post.reply;
 				if (reply?.parent?.uri) {
 					const uri = parseResourceUri(reply.parent.uri);
-					if (!uri.ok) continue;
-					setCurrentDid(uri.value.repo);
-					break;
+					if (!uri.ok) return;
+					currentDid = uri.value.repo;
+					visited.push(bestReply.uri);
 				}
 			}
 		} catch (e) {
@@ -153,11 +168,11 @@ export default function Posts(props: { agent: Agent }) {
 		<div class="space-y-4">
 			<div>
 				<h1 class="text-xl font-bold">Your Hash:</h1>
-				<Show when={referenceHash().length > 0}>
-					<p class="font-mono text-sm break-all">{referenceHash().join("")}</p>
+				<Show when={loaded()}>
+					<p class="font-mono text-sm break-all">{currentHash}</p>
 				</Show>
 			</div>
-			<Show when={currentDid()}>
+			<Show when={loaded()}>
 				<button type="button" onClick={searchNext} disabled={isSearching()}>
 					{isSearching() ? "探索中..." : "次を探索"}
 				</button>
