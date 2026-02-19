@@ -36,34 +36,44 @@ export async function resolveRecords(
 	repo: ActorIdentifier,
 	collection: `${string}.${string}.${string}`,
 ) {
-	const actor = await actorResolver.resolve(repo);
-	const rpc = new Client({
-		handler: simpleFetchHandler({ service: actor.pds }),
-	});
+	try {
+		const actor = await actorResolver.resolve(repo);
+		const rpc = new Client({
+			handler: simpleFetchHandler({ service: actor.pds }),
+		});
 
-	const res = await rpc.get("com.atproto.repo.listRecords", {
-		params: {
-			repo: actor.did,
-			collection: collection,
-		},
-	});
+		const res = await rpc.get("com.atproto.repo.listRecords", {
+			params: {
+				repo: actor.did,
+				collection: collection,
+			},
+		});
 
-	return res;
+		return res;
+	} catch (e) {
+		console.error(e);
+		return null;
+	}
 }
 
 export async function resolveProfile(repo: ActorIdentifier) {
-	const actor = await actorResolver.resolve(repo);
-	const rpc = new Client({
-		handler: simpleFetchHandler({ service: actor.pds }),
-	});
+	try {
+		const actor = await actorResolver.resolve(repo);
+		const rpc = new Client({
+			handler: simpleFetchHandler({ service: actor.pds }),
+		});
 
-	const res = await rpc.get("com.atproto.repo.getRecord", {
-		params: {
-			repo: actor.did,
-			collection: "app.bsky.actor.profile",
-			rkey: "self",
-		},
-	});
+		const res = await rpc.get("com.atproto.repo.getRecord", {
+			params: {
+				repo: actor.did,
+				collection: "app.bsky.actor.profile",
+				rkey: "self",
+			},
+		});
 
-	return res;
+		return res;
+	} catch (e) {
+		console.error(e);
+		return null;
+	}
 }

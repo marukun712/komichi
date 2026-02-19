@@ -1,10 +1,23 @@
-import { AppBskyActorProfile, AppBskyFeedPost } from "@atcute/bluesky";
-import { is, parseResourceUri } from "@atcute/lexicons";
+import {
+	AppBskyActorProfile,
+	type AppBskyFeedPost,
+	type AppBskyGraphFollow,
+} from "@atcute/bluesky";
+import { is } from "@atcute/lexicons";
 import { isActorIdentifier } from "@atcute/lexicons/syntax";
 import type { Agent } from "@atproto/api";
 import { createSignal, For, onMount, Show } from "solid-js";
 import { resolveProfile, resolveRecords } from "../lib/Resolver";
 import { type Bit, getHash, getWeights, hammingDistance } from "../lib/SimHash";
+
+function getRandomElements(arr: string[], n: number) {
+	const shuffled = [...arr];
+	for (let i = shuffled.length - 1; i > 0; i--) {
+		const j = Math.floor(Math.random() * (i + 1));
+		[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+	}
+	return shuffled.slice(0, n);
+}
 
 export default function Posts(props: { agent: Agent }) {
 	let currentDid = "";
@@ -30,24 +43,32 @@ export default function Posts(props: { agent: Agent }) {
 			collection: "app.bsky.feed.post",
 		});
 
-		const records = posts.data.records
-			.filter((r) => is(AppBskyFeedPost.mainSchema, r.value))
-			.map((r) => r.value as AppBskyFeedPost.Main);
+		const records = posts.data.records.map(
+			(r) => r.value as AppBskyFeedPost.Main,
+		);
 
 		setMyPosts(records);
 	});
 
 	const selectPost = (post: AppBskyFeedPost.Main) => {
-		const text = post.text;
-		currentHash = getHash(getWeights(text, 5));
+		currentHash = getHash(getWeights(post.text, 3));
 		currentDid = props.agent.assertDid;
 		setLoaded(true);
 		searchNext();
 	};
 
+	const getFollowDids = async (did: string): Promise<string[]> => {
+		if (!isActorIdentifier(did)) throw new Error("Invalid did");
+		const res = await resolveRecords(did, "app.bsky.graph.follow");
+		if (!res || !res.ok) return [];
+		const dids = res.data.records
+			.map((r) => (r.value as AppBskyGraphFollow.Main).subject)
+			.filter((d) => !visited.includes(d));
+		return getRandomElements(dids, 10);
+	};
+
 	const searchNext = async () => {
-		const did = currentDid;
-		if (!did) {
+		if (!currentDid) {
 			setErrorMessage("探索を続行できません");
 			return;
 		}
@@ -56,88 +77,73 @@ export default function Posts(props: { agent: Agent }) {
 		setErrorMessage("");
 
 		try {
-			if (!isActorIdentifier(did)) {
-				setErrorMessage("不正なDIDです");
+			const followDids = await getFollowDids(currentDid);
+			if (followDids.length === 0) {
+				setErrorMessage("探索できるフォローがありません");
 				return;
 			}
 
-			const res = await resolveRecords(did, "app.bsky.feed.post");
-			if (!res.ok) {
-				setErrorMessage("投稿の取得に失敗しました");
+			const candidates = await Promise.all(
+				followDids.map(async (did) => {
+					if (!isActorIdentifier(did)) return [];
+					const res = await resolveRecords(did, "app.bsky.feed.post");
+					if (!res || !res.ok) return [];
+
+					return res.data.records
+						.map((record) => {
+							const text = record.value.text as string;
+							if (!text) return null;
+							const w = getWeights(text, 3);
+							if (w.length === 0) return null;
+							const distance = hammingDistance(currentHash, getHash(w));
+							return { did, post: record.value, distance };
+						})
+						.filter((x) => x !== null) as {
+						did: string;
+						post: AppBskyFeedPost.Main;
+						distance: number;
+					}[];
+				}),
+			);
+
+			const flat = candidates.flat();
+			if (flat.length === 0) {
+				setErrorMessage("候補が見つかりませんでした");
 				return;
 			}
 
-			const posts: {
-				post: AppBskyFeedPost.Main;
-				uri: string;
-				distance: number;
-			}[] = [];
-			const replies: {
-				post: AppBskyFeedPost.Main;
-				uri: string;
-				distance: number;
-			}[] = [];
+			console.log(flat);
 
-			for (const record of res.data.records) {
-				if (!is(AppBskyFeedPost.mainSchema, record.value)) continue;
+			flat.sort((a, b) => a.distance - b.distance);
+			const best = flat[0];
 
-				const text = record.value.text;
-
-				if (!text) continue;
-
-				const w = getWeights(text, 5);
-
-				if (w.length === 0) continue;
-				if (currentHash.length === 0) continue;
-				if (visited.includes(record.uri)) continue;
-
-				const h = getHash(w);
-				const distance = hammingDistance(currentHash, h);
-
-				posts.push({ post: record.value, uri: record.uri, distance });
-
-				if (record.value.reply) {
-					replies.push({ post: record.value, uri: record.uri, distance });
-				}
+			if (!isActorIdentifier(best.did)) {
+				setErrorMessage("不正なdidです");
+				return;
+			}
+			const profile = await resolveProfile(best.did);
+			if (
+				!profile ||
+				!profile.ok ||
+				!is(AppBskyActorProfile.mainSchema, profile.data.value)
+			) {
+				setErrorMessage("プロフィールの取得に失敗しました");
+				return;
 			}
 
-			posts.sort((a, b) => a.distance - b.distance);
-			replies.sort((a, b) => a.distance - b.distance);
+			setFoundPosts((prev) => [
+				...prev,
+				{
+					distance: best.distance,
+					did: best.did,
+					profile: profile.data.value as AppBskyActorProfile.Main,
+					post: best.post,
+				},
+			]);
 
-			const bestPost = posts[0];
-			const bestReply = replies[0];
-
-			if (bestPost) {
-				const profile = await resolveProfile(did);
-				if (
-					!profile.ok ||
-					!is(AppBskyActorProfile.mainSchema, profile.data.value)
-				) {
-					setErrorMessage("プロフィールの取得に失敗しました");
-					return;
-				}
-				const actorProfile = profile.data.value;
-				setFoundPosts((prev) => [
-					...prev,
-					{
-						distance: bestPost.distance,
-						did,
-						profile: actorProfile,
-						post: bestPost.post,
-					},
-				]);
-				visited.push(bestPost.uri);
-			}
-
-			if (bestReply) {
-				const reply = bestReply.post.reply;
-				if (reply?.parent?.uri) {
-					const uri = parseResourceUri(reply.parent.uri);
-					if (!uri.ok) return;
-					currentDid = uri.value.repo;
-					visited.push(bestReply.uri);
-				}
-			}
+			currentHash = getHash(getWeights(best.post.text, 5));
+			visited.push(best.did);
+			currentDid = best.did;
 		} catch (e) {
 			console.error(e);
 			setErrorMessage("投稿の取得に失敗しました");
@@ -186,7 +192,6 @@ export default function Posts(props: { agent: Agent }) {
 			>
 				<div>
 					<h2>見つけた投稿:</h2>
-
 					<For each={foundPosts()}>
 						{(item) => (
 							<article>
@@ -199,20 +204,13 @@ export default function Posts(props: { agent: Agent }) {
 										height="60"
 										style="border-radius:50%;"
 									/>
-
 									<div>
 										<strong>{item.profile.displayName}</strong>
-										<br />
 									</div>
 								</header>
-
 								<p style="white-space:pre-wrap;">{item.post.text}</p>
-
 								<footer>
-									<small>
-										<br />
-										距離: {item.distance}
-									</small>
+									<small>距離: {item.distance}</small>
 								</footer>
 							</article>
 						)}
