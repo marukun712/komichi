@@ -20,6 +20,7 @@ export default function Posts(props: { agent: Agent }) {
 			post: AppBskyFeedPost.Main;
 		}[]
 	>([]);
+	const [myPosts, setMyPosts] = createSignal<AppBskyFeedPost.Main[]>([]);
 	const [isSearching, setIsSearching] = createSignal<boolean>(false);
 	const [errorMessage, setErrorMessage] = createSignal<string>("");
 
@@ -29,39 +30,20 @@ export default function Posts(props: { agent: Agent }) {
 			collection: "app.bsky.feed.post",
 		});
 
-		const weights: number[][] = [];
+		const records = posts.data.records
+			.filter((r) => is(AppBskyFeedPost.mainSchema, r.value))
+			.map((r) => r.value as AppBskyFeedPost.Main);
 
-		posts.data.records.forEach((r) => {
-			if (is(AppBskyFeedPost.mainSchema, r.value)) {
-				const text = r.value.text;
-				const w = getWeights(text, 3);
-				weights.push(...w);
-			}
-		});
-
-		const h = getHash(weights);
-		currentHash = h;
-
-		for (const record of posts.data.records) {
-			if (is(AppBskyFeedPost.mainSchema, record.value)) {
-				const reply = record.value.reply;
-				if (is(AppBskyFeedPost.replyRefSchema, reply) && reply.parent?.uri) {
-					const target = reply.parent.uri;
-					const uri = parseResourceUri(target);
-					if (uri.ok) {
-						const did = uri.value.repo;
-						currentDid = did;
-						setLoaded(true);
-						break;
-					}
-				}
-			}
-		}
-
-		if (!currentDid) {
-			setErrorMessage("リプライ先が見つかりませんでした");
-		}
+		setMyPosts(records);
 	});
+
+	const selectPost = (post: AppBskyFeedPost.Main) => {
+		const text = post.text;
+		currentHash = getHash(getWeights(text, 5));
+		currentDid = props.agent.assertDid;
+		setLoaded(true);
+		searchNext();
+	};
 
 	const searchNext = async () => {
 		const did = currentDid;
@@ -180,7 +162,28 @@ export default function Posts(props: { agent: Agent }) {
 			<Show when={errorMessage()}>
 				<p class="text-red-500">{errorMessage()}</p>
 			</Show>
-			<Show when={foundPosts().length > 0}>
+			<Show
+				when={foundPosts().length > 0}
+				fallback={
+					<Show when={myPosts().length > 0 && !loaded()}>
+						<div>
+							<h2>自分の投稿から選択:</h2>
+							<For each={myPosts()}>
+								{(post) => (
+									<button
+										type="button"
+										onClick={() => selectPost(post)}
+										class="block w-full text-left p-2 border rounded mb-1 hover:bg-gray-100"
+									>
+										{post.text.slice(0, 50)}
+										{post.text.length > 50 ? "..." : ""}
+									</button>
+								)}
+							</For>
+						</div>
+					</Show>
+				}
+			>
 				<div>
 					<h2>見つけた投稿:</h2>
 
