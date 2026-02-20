@@ -29,6 +29,7 @@
 		"@atproto/oauth-client-browser": "^0.3.40",
 		"@huggingface/transformers": "^3.8.1",
 		"@noble/hashes": "^2.0.1",
+		"@saehrimnir/druidjs": "^0.7.3",
 		"@tensorflow/tfjs": "^4.22.0",
 		"cytoscape": "^3.33.1",
 		"multiformats": "^13.4.2",

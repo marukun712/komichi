@@ -32,7 +32,7 @@ export const actorResolver = new LocalActorResolver({
 	didDocumentResolver: didResolver,
 });
 
-export async function resolveAuthorFeed(repo: string) {
+export async function resolveAuthorFeed(repo: string, limit?: number) {
 	try {
 		if (!isActorIdentifier(repo)) return null;
 		const actor = await actorResolver.resolve(repo);
@@ -43,7 +43,7 @@ export async function resolveAuthorFeed(repo: string) {
 		const res = await rpc.get("app.bsky.feed.getAuthorFeed", {
 			params: {
 				actor: actor.did,
-				limit: 100,
+				limit: limit ?? 50,
 			},
 		});
 
@@ -57,6 +57,7 @@ export async function resolveAuthorFeed(repo: string) {
 export async function resolveRecords(
 	repo: string,
 	collection: `${string}.${string}.${string}`,
+	limit?: number,
 ) {
 	try {
 		if (!isActorIdentifier(repo)) return null;
@@ -69,6 +70,7 @@ export async function resolveRecords(
 			params: {
 				repo: actor.did,
 				collection: collection,
+				limit: limit ?? 50,
 			},
 		});
 

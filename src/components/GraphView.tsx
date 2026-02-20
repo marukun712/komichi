@@ -85,11 +85,41 @@ export default function GraphView(props: GraphViewProps) {
 
 		const width = containerRef.clientWidth;
 		const height = containerRef.clientHeight;
-		const centerX = width / 2;
-		const centerY = height / 2;
 		const maxRadius = Math.min(width, height);
 
+		const existingNodes = new Map(
+			nodePositions().map((node) => [node.did, node]),
+		);
+
+		let centerX: number;
+		let centerY: number;
+
+		if (props.selectedIndex !== undefined) {
+			const selectedNode = nodePositions().find(
+				(n) => n.index === props.selectedIndex,
+			);
+			if (selectedNode) {
+				centerX = selectedNode.x;
+				centerY = selectedNode.y;
+			} else {
+				centerX = width / 2;
+				centerY = height / 2;
+			}
+		} else {
+			centerX = width / 2;
+			centerY = height / 2;
+		}
+
 		const positions = posts.map((post, index) => {
+			const existing = existingNodes.get(post.did);
+
+			if (existing) {
+				return {
+					...existing,
+					index,
+				};
+			}
+
 			const angle = Math.random() * 2 * Math.PI;
 			const radius = (1 - post.distance) ** 2 * 10 * maxRadius;
 			const x = centerX + radius * Math.cos(angle);
