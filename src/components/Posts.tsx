@@ -25,9 +25,11 @@ export default function Posts(props: { agent: Agent }) {
 	const [edges, setEdges] = createSignal<GraphEdge[]>([]);
 
 	let index: HNSW | null = null;
+	const idMap = new Map<string, number>();
 	const metaMap = new Map<number, GraphNode>();
 	const vectorMap = new Map<number, number[]>();
 	const visited = new Set<string>();
+	let nextId = 0;
 
 	onMount(async () => {
 		setIsLoading(true);
@@ -60,12 +62,19 @@ export default function Posts(props: { agent: Agent }) {
 				}),
 			);
 
+			if (entries.length === 0) {
+				setErrorMessage("表示できる投稿がありません");
+				return;
+			}
+
 			index = new HNSW(16, 200, entries[0].vector.length, "cosine");
 			await index.buildIndex(
-				entries.map(({ node, vector }, i) => {
-					metaMap.set(i, node);
-					vectorMap.set(i, vector);
-					return { id: i, vector };
+				entries.map(({ node, vector }) => {
+					const id = nextId++;
+					idMap.set(node.postUri, id);
+					metaMap.set(id, node);
+					vectorMap.set(id, vector);
+					return { id, vector };
 				}),
 			);
 
@@ -80,22 +89,31 @@ export default function Posts(props: { agent: Agent }) {
 		}
 	});
 
-	const selectNode = (idx: number) => {
-		setIdx(idx);
+	const selectNode = (i: number) => {
+		setIdx(i);
 	};
 
 	const exploreNode = () => {
 		if (!index) return;
 		const n = idx();
-		if (n === null || n === undefined) return;
-		const vector = vectorMap.get(n);
+		if (n === null) {
+			setErrorMessage("ノードを選択してください");
+			return;
+		}
+
+		const node = nodes()[n];
+		if (!node) return;
+
+		const hnswId = idMap.get(node.postUri);
+		if (hnswId === undefined) return;
+
+		const vector = vectorMap.get(hnswId);
 		if (!vector) return;
 
 		const results = index.searchKNN(vector, 6);
 		const newNeighbors = results
-			.map((r) => metaMap.get(r.id))
-			.filter((n) => n && !visited.has(n.postUri))
-			.filter((n) => n !== undefined)
+			.map((r) => metaMap.get(r.id as unknown as number))
+			.filter((n): n is GraphNode => n !== undefined && !visited.has(n.postUri))
 			.slice(0, 5);
 
 		if (newNeighbors.length === 0) return;
@@ -106,7 +124,7 @@ export default function Posts(props: { agent: Agent }) {
 			to: currentNodes.length + i,
 		}));
 
-		for (const n of newNeighbors) visited.add(n.postUri);
+		for (const neighbor of newNeighbors) visited.add(neighbor.postUri);
 		setNodes([...currentNodes, ...newNeighbors]);
 		setEdges([...edges(), ...newEdges]);
 	};
@@ -125,8 +143,9 @@ export default function Posts(props: { agent: Agent }) {
 				</button>
 				<GraphView nodes={nodes()} edges={edges()} onNodeClick={selectNode} />
 			</Show>
-			<Show when={nodes()[idx()!]}>
-				{(node) => {
+			<Show when={idx() !== null && nodes()[idx()!]}>
+				{(_) => {
+					const node = () => nodes()[idx()!];
 					return (
 						<article>
 							<header>
