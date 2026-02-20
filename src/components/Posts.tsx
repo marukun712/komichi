@@ -4,9 +4,13 @@ import type { DataArray } from "@huggingface/transformers";
 import { createSignal, For, onMount, Show } from "solid-js";
 import { cosineSimilarity, getVec } from "../lib/Embedding";
 import { resolveAuthorFeed, resolveProfile } from "../lib/Resolver";
+import GraphView from "./GraphView";
 
 export default function Posts(props: { agent: Agent }) {
-	let currentDid = "";
+	const [currentDid, setCurrentDid] = createSignal("");
+	const [selectedIndex, setSelectedIndex] = createSignal<number | undefined>(
+		undefined,
+	);
 	let currentVec: DataArray | null = null;
 	const profileCache = new Map<string, AppBskyActorProfile.Main>();
 
@@ -38,15 +42,24 @@ export default function Posts(props: { agent: Agent }) {
 
 	const selectPost = async (post: AppBskyFeedPost.Main) => {
 		currentVec = await getVec(post.text);
-		currentDid = props.agent.assertDid;
+		setCurrentDid(props.agent.assertDid);
 		setLoaded(true);
 		searchNext();
+	};
+
+	const handleNodeClick = async (index: number) => {
+		const clicked = foundPosts()[index];
+		if (!clicked) return;
+
+		currentVec = await getVec(clicked.post.text);
+		setCurrentDid(clicked.did);
+		setSelectedIndex(index);
 	};
 
 	const searchNext = async () => {
 		if (isSearching()) return;
 
-		if (!currentDid) {
+		if (!currentDid()) {
 			setErrorMessage("探索を続行できません");
 			return;
 		}
@@ -55,13 +68,13 @@ export default function Posts(props: { agent: Agent }) {
 		setErrorMessage("");
 
 		try {
-			const posts = await resolveAuthorFeed(currentDid);
+			const posts = await resolveAuthorFeed(currentDid());
 			if (!posts || !posts.ok) {
 				throw new Error("タイムラインを取得できませんでした");
 			}
 			const records = await Promise.all(
 				posts.data.feed
-					.filter((e) => e.post.author.did !== currentDid)
+					.filter((e) => e.post.author.did !== currentDid())
 					.map(async (record) => {
 						if (!currentVec) return null;
 
@@ -109,10 +122,11 @@ export default function Posts(props: { agent: Agent }) {
 				}),
 			);
 
-			setFoundPosts(newPosts.filter((e) => e !== null));
+			setFoundPosts((prev) => [...prev, ...newPosts.filter((e) => e !== null)]);
+			setSelectedIndex(undefined);
 
 			currentVec = await getVec(best.post.text);
-			currentDid = best.did;
+			setCurrentDid(best.did);
 		} catch (e) {
 			console.error(e);
 			setErrorMessage("投稿の取得に失敗しました");
@@ -154,6 +168,11 @@ export default function Posts(props: { agent: Agent }) {
 				}
 			>
 				<div>
+					<GraphView
+						posts={foundPosts()}
+						onNodeClick={handleNodeClick}
+						selectedIndex={selectedIndex()}
+					/>
 					<h2>見つけた投稿:</h2>
 					<For each={foundPosts()}>
 						{(item) => (
