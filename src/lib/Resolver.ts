@@ -9,7 +9,7 @@ import {
 	WebDidDocumentResolver,
 	WellKnownHandleResolver,
 } from "@atcute/identity-resolver";
-import type { ActorIdentifier } from "@atcute/lexicons";
+import { isActorIdentifier } from "@atcute/lexicons/syntax";
 
 const didResolver = new CompositeDidDocumentResolver({
 	methods: {
@@ -32,11 +32,33 @@ const actorResolver = new LocalActorResolver({
 	didDocumentResolver: didResolver,
 });
 
+export async function resolveAuthorFeed(repo: string) {
+	try {
+		if (!isActorIdentifier(repo)) return null;
+		const actor = await actorResolver.resolve(repo);
+		const rpc = new Client({
+			handler: simpleFetchHandler({ service: "https://public.api.bsky.app" }),
+		});
+
+		const res = await rpc.get("app.bsky.feed.getAuthorFeed", {
+			params: {
+				actor: actor.did,
+			},
+		});
+
+		return res;
+	} catch (e) {
+		console.error(e);
+		return null;
+	}
+}
+
 export async function resolveRecords(
-	repo: ActorIdentifier,
+	repo: string,
 	collection: `${string}.${string}.${string}`,
 ) {
 	try {
+		if (!isActorIdentifier(repo)) return null;
 		const actor = await actorResolver.resolve(repo);
 		const rpc = new Client({
 			handler: simpleFetchHandler({ service: actor.pds }),
@@ -56,8 +78,9 @@ export async function resolveRecords(
 	}
 }
 
-export async function resolveProfile(repo: ActorIdentifier) {
+export async function resolveProfile(repo: string) {
 	try {
+		if (!isActorIdentifier(repo)) return null;
 		const actor = await actorResolver.resolve(repo);
 		const rpc = new Client({
 			handler: simpleFetchHandler({ service: actor.pds }),

@@ -4,11 +4,15 @@ import {
 	type AppBskyGraphFollow,
 } from "@atcute/bluesky";
 import { is } from "@atcute/lexicons";
-import { isActorIdentifier } from "@atcute/lexicons/syntax";
 import type { Agent } from "@atproto/api";
+import type { DataArray } from "@huggingface/transformers";
 import { createSignal, For, onMount, Show } from "solid-js";
-import { resolveProfile, resolveRecords } from "../lib/Resolver";
-import { type Bit, getHash, getWeights, hammingDistance } from "../lib/SimHash";
+import { cosineSimilarity, getVec } from "../lib/Embedding";
+import {
+	resolveAuthorFeed,
+	resolveProfile,
+	resolveRecords,
+} from "../lib/Resolver";
 
 function getRandomElements(arr: string[], n: number) {
 	const shuffled = [...arr];
@@ -21,7 +25,7 @@ function getRandomElements(arr: string[], n: number) {
 
 export default function Posts(props: { agent: Agent }) {
 	let currentDid = "";
-	let currentHash: Bit[] = [];
+	let currentVec: DataArray | null = null;
 	const visited: string[] = [];
 
 	const [loaded, setLoaded] = createSignal<boolean>(false);
@@ -50,15 +54,14 @@ export default function Posts(props: { agent: Agent }) {
 		setMyPosts(records);
 	});
 
-	const selectPost = (post: AppBskyFeedPost.Main) => {
-		currentHash = getHash(getWeights(post.text, 3));
+	const selectPost = async (post: AppBskyFeedPost.Main) => {
+		currentVec = await getVec(post.text);
 		currentDid = props.agent.assertDid;
 		setLoaded(true);
 		searchNext();
 	};
 
 	const getFollowDids = async (did: string): Promise<string[]> => {
-		if (!isActorIdentifier(did)) throw new Error("Invalid did");
 		const res = await resolveRecords(did, "app.bsky.graph.follow");
 		if (!res || !res.ok) return [];
 		const dids = res.data.records
@@ -85,24 +88,26 @@ export default function Posts(props: { agent: Agent }) {
 
 			const candidates = await Promise.all(
 				followDids.map(async (did) => {
-					if (!isActorIdentifier(did)) return [];
-					const res = await resolveRecords(did, "app.bsky.feed.post");
+					const res = await resolveAuthorFeed(did);
 					if (!res || !res.ok) return [];
 
-					return res.data.records
-						.map((record) => {
-							const text = record.value.text as string;
-							if (!text) return null;
-							const w = getWeights(text, 3);
-							if (w.length === 0) return null;
-							const distance = hammingDistance(currentHash, getHash(w));
-							return { did, post: record.value, distance };
-						})
-						.filter((x) => x !== null) as {
-						did: string;
-						post: AppBskyFeedPost.Main;
-						distance: number;
-					}[];
+					const records = await Promise.all(
+						res.data.feed.map(async (record) => {
+							if (!currentVec) return null;
+
+							const post = record.post.record as AppBskyFeedPost.Main;
+							const vec = await getVec(post.text);
+							const distance = cosineSimilarity(currentVec, vec);
+
+							return {
+								did,
+								post: record.post.record as AppBskyFeedPost.Main,
+								distance,
+							};
+						}),
+					);
+
+					return records.filter((x) => x !== null);
 				}),
 			);
 
@@ -112,15 +117,9 @@ export default function Posts(props: { agent: Agent }) {
 				return;
 			}
 
-			console.log(flat);
-
-			flat.sort((a, b) => a.distance - b.distance);
+			flat.sort((a, b) => b.distance - a.distance);
 			const best = flat[0];
 
-			if (!isActorIdentifier(best.did)) {
-				setErrorMessage("不正なdidです");
-				return;
-			}
 			const profile = await resolveProfile(best.did);
 			if (
 				!profile ||
@@ -141,7 +140,7 @@ export default function Posts(props: { agent: Agent }) {
 				},
 			]);
 
-			currentHash = getHash(getWeights(best.post.text, 5));
+			currentVec = await getVec(best.post.text);
 			visited.push(best.did);
 			currentDid = best.did;
 		} catch (e) {
@@ -154,12 +153,6 @@ export default function Posts(props: { agent: Agent }) {
 
 	return (
 		<div class="space-y-4">
-			<div>
-				<h1 class="text-xl font-bold">Your Hash:</h1>
-				<Show when={loaded()}>
-					<p class="font-mono text-sm break-all">{currentHash}</p>
-				</Show>
-			</div>
 			<Show when={loaded()}>
 				<button type="button" onClick={searchNext} disabled={isSearching()}>
 					{isSearching() ? "探索中..." : "次を探索"}

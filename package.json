@@ -27,7 +27,9 @@
 		"@atcute/lexicons": "^1.2.9",
 		"@atproto/api": "^0.18.21",
 		"@atproto/oauth-client-browser": "^0.3.40",
+		"@huggingface/transformers": "^3.8.1",
 		"@noble/hashes": "^2.0.1",
+		"@tensorflow/tfjs": "^4.22.0",
 		"multiformats": "^13.4.2",
 		"solid-js": "^1.9.9"
 	}
