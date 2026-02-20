@@ -114,11 +114,10 @@ export default function Posts(props: { agent: Agent }) {
 			});
 			const myPosts = myPostsResult.data.records
 				.map((r) => r.value as AppBskyFeedPost.Main)
-				.filter((r) => r.text !== "")
-				.slice(0, parsedFeed.length);
-			const myPostRecords = myPostsResult.data.records
-				.filter((r) => (r.value as AppBskyFeedPost.Main).text !== "")
-				.slice(0, parsedFeed.length);
+				.filter((r) => r.text !== "");
+			const myPostRecords = myPostsResult.data.records.filter(
+				(r) => (r.value as AppBskyFeedPost.Main).text !== "",
+			);
 
 			const allTexts = [...myPosts.map((r) => r.text), ...parsedFeed];
 			const allEmbeddings = await Promise.all(
