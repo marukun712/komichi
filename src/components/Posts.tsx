@@ -7,37 +7,18 @@ import { cosineSimilarity, getVec } from "../lib/Embedding";
 import { resolveAuthorFeed, resolveProfile } from "../lib/Resolver";
 import GraphView from "./GraphView";
 
-interface DruidMatrix {
-	_rows: number;
-	_cols: number;
-	_data: Float64Array;
-}
-
-function extractMDSCoordinates(
-	mdsMatrix: DruidMatrix,
-): { x: number; y: number }[] {
-	const rows = mdsMatrix._rows;
-	const data = mdsMatrix._data;
-
-	const coords: { x: number; y: number }[] = [];
-	for (let i = 0; i < rows; i++) {
-		coords.push({
-			x: data[i],
-			y: data[rows + i],
-		});
-	}
-	return coords;
-}
-
 function generateNodes(matrix: number[][]) {
 	const parsed = druid.Matrix.from(matrix);
-	const mds = new druid.MDS(parsed, {
+	const umap = new druid.UMAP(parsed, {
 		d: 2,
 		metric: "precomputed",
 	});
-	const coords = mds.transform();
+	const coords = umap.transform();
 
-	const rawCoords = extractMDSCoordinates(coords);
+	const rawCoords = (coords.to2dArray as number[][]).map((row) => ({
+		x: row[0],
+		y: row[1],
+	}));
 
 	const xValues = rawCoords.map((c) => c.x);
 	const yValues = rawCoords.map((c) => c.y);
@@ -115,37 +96,31 @@ export default function Posts(props: { agent: Agent }) {
 				setErrorMessage("フィードの取得に失敗しました");
 				return;
 			}
-
 			const feedItems = feed.data.feed
 				.filter((r) => r.post.author.did !== currentDid())
 				.filter((r) => (r.post.record.text as string) !== "");
-
 			const parsedFeed = feedItems.map((r) => r.post.record.text as string);
-
-			const myPostsResult = await props.agent.com.atproto.repo.listRecords({
-				repo: currentDid(),
-				collection: "app.bsky.feed.post",
-			});
 
 			const myProfile = await resolveProfile(currentDid());
 			if (!myProfile || !myProfile.ok) {
 				setErrorMessage("プロフィールの取得に失敗しました");
 				return;
 			}
-
 			const profile = myProfile.data.value as AppBskyActorProfile.Main;
 
+			const myPostsResult = await props.agent.com.atproto.repo.listRecords({
+				repo: currentDid(),
+				collection: "app.bsky.feed.post",
+			});
 			const myPosts = myPostsResult.data.records
 				.map((r) => r.value as AppBskyFeedPost.Main)
 				.filter((r) => r.text !== "")
 				.slice(0, parsedFeed.length);
-
 			const myPostRecords = myPostsResult.data.records
 				.filter((r) => (r.value as AppBskyFeedPost.Main).text !== "")
 				.slice(0, parsedFeed.length);
 
 			const allTexts = [...myPosts.map((r) => r.text), ...parsedFeed];
-
 			const allEmbeddings = await Promise.all(
 				allTexts.map((text) => getVec(text)),
 			);
