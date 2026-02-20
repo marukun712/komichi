@@ -5,11 +5,42 @@ import * as druid from "@saehrimnir/druidjs";
 import { createSignal, onMount, Show } from "solid-js";
 import { cosineSimilarity, getVec } from "../lib/Embedding";
 import { resolveAuthorFeed } from "../lib/Resolver";
+import GraphView from "./GraphView";
+
+interface DruidMatrix {
+	_rows: number;
+	_cols: number;
+	_data: Float64Array;
+}
+
+function extractMDSCoordinates(
+	mdsMatrix: DruidMatrix,
+): { x: number; y: number }[] {
+	const rows = mdsMatrix._rows;
+	const data = mdsMatrix._data;
+
+	const coords: { x: number; y: number }[] = [];
+	for (let i = 0; i < rows; i++) {
+		coords.push({
+			x: data[i],
+			y: data[rows + i],
+		});
+	}
+	return coords;
+}
 
 export default function Posts(props: { agent: Agent }) {
 	const [currentDid, setCurrentDid] = createSignal("");
 	const [isSearching, setIsSearching] = createSignal<boolean>(false);
 	const [errorMessage, setErrorMessage] = createSignal<string>("");
+	const [mdsNodes, setMdsNodes] = createSignal<
+		{
+			did: string;
+			x: number;
+			y: number;
+			avatarUrl: string;
+		}[]
+	>([]);
 
 	onMount(async () => {
 		setCurrentDid(props.agent.assertDid);
@@ -30,46 +61,39 @@ export default function Posts(props: { agent: Agent }) {
 		try {
 			const matrix: number[][] = [];
 
-			const posts = await props.agent.com.atproto.repo.listRecords({
-				repo: props.agent.assertDid,
-				collection: "app.bsky.feed.post",
-				limit: 20,
-			});
-
-			const parsedPosts = posts.data.records
-				.map((r) => r.value as AppBskyFeedPost.Main)
-				.filter((r) => r.text !== "");
-
-			const embeddings = await Promise.all(
-				parsedPosts.map(async (r) => await getVec(r.text)),
-			);
-
-			const feed = await resolveAuthorFeed(currentDid(), 100);
+			const feed = await resolveAuthorFeed(currentDid());
 
 			if (!feed || !feed.ok) {
 				setErrorMessage("フィードの取得に失敗しました");
 				return;
 			}
 
-			const parsedFeed = feed.data.feed
+			const feedItems = feed.data.feed
 				.filter((r) => r.post.author.did !== currentDid())
-				.map((r) => r.post.record.text as string)
-				.filter((r) => r !== "")
-				.slice(0, 20);
+				.filter((r) => (r.post.record.text as string) !== "");
 
-			console.log(parsedFeed);
+			const parsedFeed = feedItems.map((r) => r.post.record.text as string);
 
-			if (parsedFeed.length !== embeddings.length) {
-				setErrorMessage("タイムラインに十分な投稿がありません");
-				return;
-			}
+			const posts = await props.agent.com.atproto.repo.listRecords({
+				repo: currentDid(),
+				collection: "app.bsky.feed.post",
+			});
 
-			const tlEmbeddings = await Promise.all(
+			const parsedPosts = posts.data.records
+				.map((r) => r.value as AppBskyFeedPost.Main)
+				.filter((r) => r.text !== "")
+				.slice(0, parsedFeed.length);
+
+			const embeddings = await Promise.all(
+				parsedPosts.map(async (r) => await getVec(r.text)),
+			);
+
+			const feedEmbeddings = await Promise.all(
 				parsedFeed.map((post) => getVec(post)),
 			);
 
 			for (const source of embeddings) {
-				const row = tlEmbeddings.map((target) =>
+				const row = feedEmbeddings.map((target) =>
 					cosineSimilarity(source, target),
 				);
 				matrix.push(row);
@@ -83,7 +107,55 @@ export default function Posts(props: { agent: Agent }) {
 				metric: "precomputed",
 			});
 			const coords = mds.transform();
-			console.log(coords);
+
+			const rawCoords = extractMDSCoordinates(coords);
+
+			const xValues = rawCoords.map((c) => c.x);
+			const yValues = rawCoords.map((c) => c.y);
+			const minX = Math.min(...xValues);
+			const maxX = Math.max(...xValues);
+			const minY = Math.min(...yValues);
+			const maxY = Math.max(...yValues);
+
+			const rangeX = maxX - minX;
+			const rangeY = maxY - minY;
+			if (
+				rangeX === 0 ||
+				rangeY === 0 ||
+				!Number.isFinite(rangeX) ||
+				!Number.isFinite(rangeY)
+			) {
+				setErrorMessage("座標の計算に失敗しました");
+				return;
+			}
+
+			const VIEWPORT_WIDTH = 800;
+			const VIEWPORT_HEIGHT = 600;
+			const PADDING = 50;
+
+			const scaleX = (VIEWPORT_WIDTH - 2 * PADDING) / rangeX;
+			const scaleY = (VIEWPORT_HEIGHT - 2 * PADDING) / rangeY;
+			const scale = Math.min(scaleX, scaleY);
+
+			const normalizedCoords = rawCoords.map((coord) => ({
+				x: PADDING + (coord.x - minX) * scale,
+				y: PADDING + (coord.y - minY) * scale,
+			}));
+
+			const nodes = normalizedCoords.map((coord, i) => {
+				const feedItem = feedItems[i];
+				const did = feedItem.post.author.did;
+				const profile = feedItem.post.author;
+
+				return {
+					did,
+					x: coord.x,
+					y: coord.y,
+					avatarUrl: profile.avatar!,
+				};
+			});
+
+			setMdsNodes(nodes);
 		} catch (e) {
 			console.error(e);
 			setErrorMessage("投稿の取得に失敗しました");
@@ -99,6 +171,9 @@ export default function Posts(props: { agent: Agent }) {
 			</button>
 			<Show when={errorMessage()}>
 				<p class="text-red-500">{errorMessage()}</p>
+			</Show>
+			<Show when={mdsNodes().length > 0}>
+				<GraphView nodes={mdsNodes()} />
 			</Show>
 		</div>
 	);

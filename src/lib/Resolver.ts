@@ -43,7 +43,7 @@ export async function resolveAuthorFeed(repo: string, limit?: number) {
 		const res = await rpc.get("app.bsky.feed.getAuthorFeed", {
 			params: {
 				actor: actor.did,
-				limit: limit ?? 50,
+				limit: limit ?? 100,
 			},
 		});
 
@@ -70,7 +70,7 @@ export async function resolveRecords(
 			params: {
 				repo: actor.did,
 				collection: collection,
-				limit: limit ?? 50,
+				limit: limit ?? 100,
 			},
 		});
 

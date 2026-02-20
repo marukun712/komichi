@@ -1,23 +1,16 @@
-import type { AppBskyActorProfile, AppBskyFeedPost } from "@atcute/bluesky";
 import { createEffect, createSignal, For } from "solid-js";
 
 interface GraphViewProps {
-	posts: {
-		distance: number;
+	nodes: {
 		did: string;
-		profile: AppBskyActorProfile.Main;
-		post: AppBskyFeedPost.Main;
+		x: number;
+		y: number;
+		avatarUrl: string;
 	}[];
-	onNodeClick?: (index: number) => void;
-	selectedIndex?: number;
 }
 
 export default function GraphView(props: GraphViewProps) {
 	let containerRef: HTMLDivElement | undefined;
-
-	const [nodePositions, setNodePositions] = createSignal<
-		{ index: number; did: string; x: number; y: number; avatarUrl: string }[]
-	>([]);
 
 	const [transform, setTransform] = createSignal({
 		x: 0,
@@ -27,6 +20,23 @@ export default function GraphView(props: GraphViewProps) {
 
 	const [isDragging, setIsDragging] = createSignal(false);
 	const [dragStart, setDragStart] = createSignal({ x: 0, y: 0 });
+
+	createEffect(() => {
+		if (!containerRef || props.nodes.length === 0) return;
+
+		const width = containerRef.clientWidth;
+		const height = containerRef.clientHeight;
+		if (width === 0 || height === 0) return;
+
+		if (transform().x !== 0 || transform().y !== 0 || transform().scale !== 1)
+			return;
+
+		setTransform({
+			x: (width - 800) / 2,
+			y: (height - 600) / 2,
+			scale: 1,
+		});
+	});
 
 	const handleWheel = (e: WheelEvent) => {
 		e.preventDefault();
@@ -74,72 +84,6 @@ export default function GraphView(props: GraphViewProps) {
 		setIsDragging(false);
 	};
 
-	createEffect(() => {
-		if (!containerRef) return;
-
-		const posts = props.posts;
-		if (posts.length === 0) {
-			setNodePositions([]);
-			return;
-		}
-
-		const width = containerRef.clientWidth;
-		const height = containerRef.clientHeight;
-		const maxRadius = Math.min(width, height);
-
-		const existingNodes = new Map(
-			nodePositions().map((node) => [node.did, node]),
-		);
-
-		let centerX: number;
-		let centerY: number;
-
-		if (props.selectedIndex !== undefined) {
-			const selectedNode = nodePositions().find(
-				(n) => n.index === props.selectedIndex,
-			);
-			if (selectedNode) {
-				centerX = selectedNode.x;
-				centerY = selectedNode.y;
-			} else {
-				centerX = width / 2;
-				centerY = height / 2;
-			}
-		} else {
-			centerX = width / 2;
-			centerY = height / 2;
-		}
-
-		const positions = posts.map((post, index) => {
-			const existing = existingNodes.get(post.did);
-
-			if (existing) {
-				return {
-					...existing,
-					index,
-				};
-			}
-
-			const angle = Math.random() * 2 * Math.PI;
-			const radius = (1 - post.distance) ** 2 * 10 * maxRadius;
-			const x = centerX + radius * Math.cos(angle);
-			const y = centerY + radius * Math.sin(angle);
-
-			return {
-				index,
-				did: post.did,
-				x,
-				y,
-				avatarUrl: `https://cdn.bsky.app/img/avatar/plain/${post.did}/${
-					// @ts-expect-error
-					post.profile.avatar?.ref.$link
-				}`,
-			};
-		});
-
-		setNodePositions(positions);
-	});
-
 	return (
 		<div
 			ref={containerRef}
@@ -168,43 +112,29 @@ export default function GraphView(props: GraphViewProps) {
 					position: "relative",
 				}}
 			>
-				<For each={nodePositions()}>
-					{(node) => {
-						const isSelected = () => node.index === props.selectedIndex;
-						return (
-							<button
-								type="button"
-								onClick={() => props.onNodeClick?.(node.index)}
-								onMouseDown={(e) => e.stopPropagation()}
+				<For each={props.nodes}>
+					{(node) => (
+						<div
+							style={{
+								position: "absolute",
+								left: `${node.x}px`,
+								top: `${node.y}px`,
+								width: "30px",
+								height: "30px",
+							}}
+						>
+							<img
+								src={node.avatarUrl}
+								alt=""
 								style={{
-									position: "absolute",
-									left: `${node.x}px`,
-									top: `${node.y}px`,
-									width: "30px",
-									height: "30px",
-									padding: "0",
-									background: "none",
-									border: isSelected() ? "3px solid #3b82f6" : "none",
+									width: "100%",
+									height: "100%",
 									"border-radius": "50%",
-									cursor: "pointer",
-									"box-shadow": isSelected()
-										? "0 0 10px rgba(59, 130, 246, 0.5)"
-										: "none",
+									display: "block",
 								}}
-							>
-								<img
-									src={node.avatarUrl}
-									alt=""
-									style={{
-										width: "100%",
-										height: "100%",
-										"border-radius": "50%",
-										display: "block",
-									}}
-								/>
-							</button>
-						);
-					}}
+							/>
+						</div>
+					)}
 				</For>
 			</div>
 		</div>
