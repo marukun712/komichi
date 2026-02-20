@@ -11,14 +11,14 @@ import {
 } from "@atcute/identity-resolver";
 import { isActorIdentifier } from "@atcute/lexicons/syntax";
 
-const didResolver = new CompositeDidDocumentResolver({
+export const didResolver = new CompositeDidDocumentResolver({
 	methods: {
 		plc: new PlcDidDocumentResolver(),
 		web: new WebDidDocumentResolver(),
 	},
 });
 
-const handleResolver = new CompositeHandleResolver({
+export const handleResolver = new CompositeHandleResolver({
 	methods: {
 		dns: new DohJsonHandleResolver({
 			dohUrl: "https://mozilla.cloudflare-dns.com/dns-query",
@@ -27,7 +27,7 @@ const handleResolver = new CompositeHandleResolver({
 	},
 });
 
-const actorResolver = new LocalActorResolver({
+export const actorResolver = new LocalActorResolver({
 	handleResolver,
 	didDocumentResolver: didResolver,
 });
@@ -43,6 +43,7 @@ export async function resolveAuthorFeed(repo: string) {
 		const res = await rpc.get("app.bsky.feed.getAuthorFeed", {
 			params: {
 				actor: actor.did,
+				limit: 100,
 			},
 		});
 

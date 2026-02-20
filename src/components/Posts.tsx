@@ -1,32 +1,14 @@
-import {
-	AppBskyActorProfile,
-	type AppBskyFeedPost,
-	type AppBskyGraphFollow,
-} from "@atcute/bluesky";
-import { is } from "@atcute/lexicons";
+import type { AppBskyActorProfile, AppBskyFeedPost } from "@atcute/bluesky";
 import type { Agent } from "@atproto/api";
 import type { DataArray } from "@huggingface/transformers";
 import { createSignal, For, onMount, Show } from "solid-js";
 import { cosineSimilarity, getVec } from "../lib/Embedding";
-import {
-	resolveAuthorFeed,
-	resolveProfile,
-	resolveRecords,
-} from "../lib/Resolver";
-
-function getRandomElements(arr: string[], n: number) {
-	const shuffled = [...arr];
-	for (let i = shuffled.length - 1; i > 0; i--) {
-		const j = Math.floor(Math.random() * (i + 1));
-		[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-	}
-	return shuffled.slice(0, n);
-}
+import { resolveAuthorFeed, resolveProfile } from "../lib/Resolver";
 
 export default function Posts(props: { agent: Agent }) {
 	let currentDid = "";
 	let currentVec: DataArray | null = null;
-	const visited: string[] = [];
+	const profileCache = new Map<string, AppBskyActorProfile.Main>();
 
 	const [loaded, setLoaded] = createSignal<boolean>(false);
 	const [foundPosts, setFoundPosts] = createSignal<
@@ -47,9 +29,9 @@ export default function Posts(props: { agent: Agent }) {
 			collection: "app.bsky.feed.post",
 		});
 
-		const records = posts.data.records.map(
-			(r) => r.value as AppBskyFeedPost.Main,
-		);
+		const records = posts.data.records
+			.map((r) => r.value as AppBskyFeedPost.Main)
+			.filter((r) => r.text !== "");
 
 		setMyPosts(records);
 	});
@@ -61,16 +43,9 @@ export default function Posts(props: { agent: Agent }) {
 		searchNext();
 	};
 
-	const getFollowDids = async (did: string): Promise<string[]> => {
-		const res = await resolveRecords(did, "app.bsky.graph.follow");
-		if (!res || !res.ok) return [];
-		const dids = res.data.records
-			.map((r) => (r.value as AppBskyGraphFollow.Main).subject)
-			.filter((d) => !visited.includes(d));
-		return getRandomElements(dids, 10);
-	};
-
 	const searchNext = async () => {
+		if (isSearching()) return;
+
 		if (!currentDid) {
 			setErrorMessage("探索を続行できません");
 			return;
@@ -80,38 +55,28 @@ export default function Posts(props: { agent: Agent }) {
 		setErrorMessage("");
 
 		try {
-			const followDids = await getFollowDids(currentDid);
-			if (followDids.length === 0) {
-				setErrorMessage("探索できるフォローがありません");
-				return;
+			const posts = await resolveAuthorFeed(currentDid);
+			if (!posts || !posts.ok) {
+				throw new Error("タイムラインを取得できませんでした");
 			}
+			const records = await Promise.all(
+				posts.data.feed
+					.filter((e) => e.post.author.did !== currentDid)
+					.map(async (record) => {
+						if (!currentVec) return null;
 
-			const candidates = await Promise.all(
-				followDids.map(async (did) => {
-					const res = await resolveAuthorFeed(did);
-					if (!res || !res.ok) return [];
-
-					const records = await Promise.all(
-						res.data.feed.map(async (record) => {
-							if (!currentVec) return null;
-
-							const post = record.post.record as AppBskyFeedPost.Main;
-							const vec = await getVec(post.text);
-							const distance = cosineSimilarity(currentVec, vec);
-
-							return {
-								did,
-								post: record.post.record as AppBskyFeedPost.Main,
-								distance,
-							};
-						}),
-					);
-
-					return records.filter((x) => x !== null);
-				}),
+						const post = record.post.record as AppBskyFeedPost.Main;
+						const vec = await getVec(post.text);
+						const distance = cosineSimilarity(currentVec, vec);
+						return {
+							did: record.post.author.did,
+							post: record.post.record as AppBskyFeedPost.Main,
+							distance,
+						};
+					}),
 			);
 
-			const flat = candidates.flat();
+			const flat = records.flat().filter((e) => e !== null);
 			if (flat.length === 0) {
 				setErrorMessage("候補が見つかりませんでした");
 				return;
@@ -120,28 +85,33 @@ export default function Posts(props: { agent: Agent }) {
 			flat.sort((a, b) => b.distance - a.distance);
 			const best = flat[0];
 
-			const profile = await resolveProfile(best.did);
-			if (
-				!profile ||
-				!profile.ok ||
-				!is(AppBskyActorProfile.mainSchema, profile.data.value)
-			) {
-				setErrorMessage("プロフィールの取得に失敗しました");
-				return;
-			}
+			const newPosts = await Promise.all(
+				flat.slice(0, 50).map(async (e) => {
+					let profile: AppBskyActorProfile.Main;
+					const has = profileCache.get(e.did);
+					if (has) {
+						profile = has;
+					} else {
+						const res = await resolveProfile(e.did);
+						if (!res || !res.ok) {
+							setErrorMessage("プロフィールの取得に失敗しました");
+							return null;
+						}
+						profile = res.data.value as AppBskyActorProfile.Main;
+						profileCache.set(e.did, profile);
+					}
+					return {
+						distance: e.distance,
+						did: e.did,
+						profile,
+						post: e.post,
+					};
+				}),
+			);
 
-			setFoundPosts((prev) => [
-				...prev,
-				{
-					distance: best.distance,
-					did: best.did,
-					profile: profile.data.value as AppBskyActorProfile.Main,
-					post: best.post,
-				},
-			]);
+			setFoundPosts(newPosts.filter((e) => e !== null));
 
 			currentVec = await getVec(best.post.text);
-			visited.push(best.did);
 			currentDid = best.did;
 		} catch (e) {
 			console.error(e);
