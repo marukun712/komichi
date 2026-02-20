@@ -8,7 +8,6 @@ interface GraphViewProps {
 		avatarUrl: string;
 		postText: string;
 		authorName: string;
-		authorHandle: string;
 		createdAt: string;
 		postUri: string;
 	}[];

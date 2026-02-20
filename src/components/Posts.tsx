@@ -1,10 +1,10 @@
 import type { AppBskyFeedPost } from "@atcute/bluesky";
-import type { Agent } from "@atproto/api";
+import type { Agent, AppBskyActorProfile } from "@atproto/api";
 // @ts-expect-error
 import * as druid from "@saehrimnir/druidjs";
 import { createSignal, onMount, Show } from "solid-js";
 import { cosineSimilarity, getVec } from "../lib/Embedding";
-import { resolveAuthorFeed } from "../lib/Resolver";
+import { resolveAuthorFeed, resolveProfile } from "../lib/Resolver";
 import GraphView from "./GraphView";
 
 interface DruidMatrix {
@@ -29,6 +29,50 @@ function extractMDSCoordinates(
 	return coords;
 }
 
+function generateNodes(matrix: number[][]) {
+	const parsed = druid.Matrix.from(matrix);
+	const mds = new druid.MDS(parsed, {
+		d: 2,
+		metric: "precomputed",
+	});
+	const coords = mds.transform();
+
+	const rawCoords = extractMDSCoordinates(coords);
+
+	const xValues = rawCoords.map((c) => c.x);
+	const yValues = rawCoords.map((c) => c.y);
+	const minX = Math.min(...xValues);
+	const maxX = Math.max(...xValues);
+	const minY = Math.min(...yValues);
+	const maxY = Math.max(...yValues);
+
+	const rangeX = maxX - minX;
+	const rangeY = maxY - minY;
+	if (
+		rangeX === 0 ||
+		rangeY === 0 ||
+		!Number.isFinite(rangeX) ||
+		!Number.isFinite(rangeY)
+	) {
+		throw new Error("座標の計算に失敗しました");
+	}
+
+	const VIEWPORT_WIDTH = 800;
+	const VIEWPORT_HEIGHT = 600;
+	const PADDING = 50;
+
+	const scaleX = (VIEWPORT_WIDTH - 2 * PADDING) / rangeX;
+	const scaleY = (VIEWPORT_HEIGHT - 2 * PADDING) / rangeY;
+	const scale = Math.min(scaleX, scaleY);
+
+	const normalizedCoords = rawCoords.map((coord) => ({
+		x: PADDING + (coord.x - minX) * scale,
+		y: PADDING + (coord.y - minY) * scale,
+	}));
+
+	return normalizedCoords;
+}
+
 export default function Posts(props: { agent: Agent }) {
 	const [currentDid, setCurrentDid] = createSignal("");
 	const [isSearching, setIsSearching] = createSignal<boolean>(false);
@@ -44,7 +88,6 @@ export default function Posts(props: { agent: Agent }) {
 			avatarUrl: string;
 			postText: string;
 			authorName: string;
-			authorHandle: string;
 			createdAt: string;
 			postUri: string;
 		}[]
@@ -67,10 +110,7 @@ export default function Posts(props: { agent: Agent }) {
 		setErrorMessage("");
 
 		try {
-			const matrix: number[][] = [];
-
 			const feed = await resolveAuthorFeed(currentDid());
-
 			if (!feed || !feed.ok) {
 				setErrorMessage("フィードの取得に失敗しました");
 				return;
@@ -82,94 +122,79 @@ export default function Posts(props: { agent: Agent }) {
 
 			const parsedFeed = feedItems.map((r) => r.post.record.text as string);
 
-			const posts = await props.agent.com.atproto.repo.listRecords({
+			const myPostsResult = await props.agent.com.atproto.repo.listRecords({
 				repo: currentDid(),
 				collection: "app.bsky.feed.post",
 			});
 
-			const parsedPosts = posts.data.records
+			const myProfile = await resolveProfile(currentDid());
+			if (!myProfile || !myProfile.ok) {
+				setErrorMessage("プロフィールの取得に失敗しました");
+				return;
+			}
+
+			const profile = myProfile.data.value as AppBskyActorProfile.Main;
+
+			const myPosts = myPostsResult.data.records
 				.map((r) => r.value as AppBskyFeedPost.Main)
 				.filter((r) => r.text !== "")
 				.slice(0, parsedFeed.length);
 
-			const embeddings = await Promise.all(
-				parsedPosts.map(async (r) => await getVec(r.text)),
+			const myPostRecords = myPostsResult.data.records
+				.filter((r) => (r.value as AppBskyFeedPost.Main).text !== "")
+				.slice(0, parsedFeed.length);
+
+			const allTexts = [...myPosts.map((r) => r.text), ...parsedFeed];
+
+			const allEmbeddings = await Promise.all(
+				allTexts.map((text) => getVec(text)),
 			);
 
-			const feedEmbeddings = await Promise.all(
-				parsedFeed.map((post) => getVec(post)),
-			);
-
-			for (const source of embeddings) {
-				const row = feedEmbeddings.map((target) =>
-					cosineSimilarity(source, target),
-				);
-				matrix.push(row);
+			const n = allEmbeddings.length;
+			const distanceMatrix: number[][] = [];
+			for (let i = 0; i < n; i++) {
+				const row: number[] = [];
+				for (let j = 0; j < n; j++) {
+					row.push(1 - cosineSimilarity(allEmbeddings[i], allEmbeddings[j]));
+				}
+				distanceMatrix.push(row);
 			}
 
-			const distanceMatrix = matrix.map((row) => row.map((sim) => 1 - sim));
-			const parsed = druid.Matrix.from(distanceMatrix);
+			const allCoords = generateNodes(distanceMatrix);
 
-			const mds = new druid.MDS(parsed, {
-				d: 2,
-				metric: "precomputed",
-			});
-			const coords = mds.transform();
+			const myCount = myPosts.length;
 
-			const rawCoords = extractMDSCoordinates(coords);
-
-			const xValues = rawCoords.map((c) => c.x);
-			const yValues = rawCoords.map((c) => c.y);
-			const minX = Math.min(...xValues);
-			const maxX = Math.max(...xValues);
-			const minY = Math.min(...yValues);
-			const maxY = Math.max(...yValues);
-
-			const rangeX = maxX - minX;
-			const rangeY = maxY - minY;
-			if (
-				rangeX === 0 ||
-				rangeY === 0 ||
-				!Number.isFinite(rangeX) ||
-				!Number.isFinite(rangeY)
-			) {
-				setErrorMessage("座標の計算に失敗しました");
-				return;
-			}
-
-			const VIEWPORT_WIDTH = 800;
-			const VIEWPORT_HEIGHT = 600;
-			const PADDING = 50;
-
-			const scaleX = (VIEWPORT_WIDTH - 2 * PADDING) / rangeX;
-			const scaleY = (VIEWPORT_HEIGHT - 2 * PADDING) / rangeY;
-			const scale = Math.min(scaleX, scaleY);
-
-			const normalizedCoords = rawCoords.map((coord) => ({
-				x: PADDING + (coord.x - minX) * scale,
-				y: PADDING + (coord.y - minY) * scale,
+			const myNodes = allCoords.slice(0, myCount).map((coord, i) => ({
+				did: currentDid(),
+				x: coord.x,
+				y: coord.y,
+				// @ts-expect-error
+				avatarUrl: `https://cdn.bsky.app/img/avatar/plain/${currentDid()}/${profile.avatar?.ref.$link}`,
+				postText: myPosts[i].text,
+				authorName: profile.displayName!,
+				createdAt: myPosts[i].createdAt,
+				postUri: myPostRecords[i].uri,
+				isOwn: true,
 			}));
 
-			const nodes = normalizedCoords.map((coord, i) => {
+			const feedNodes = allCoords.slice(myCount).map((coord, i) => {
 				const feedItem = feedItems[i];
-				const did = feedItem.post.author.did;
 				const profile = feedItem.post.author;
 				const record = feedItem.post.record as AppBskyFeedPost.Main;
-
 				return {
-					did,
+					did: profile.did,
 					x: coord.x,
 					y: coord.y,
 					avatarUrl: profile.avatar!,
 					postText: record.text,
-					authorName: profile.displayName || profile.handle,
-					authorHandle: profile.handle,
+					authorName: profile.displayName!,
 					createdAt: record.createdAt,
 					postUri: feedItem.post.uri,
+					isOwn: false,
 				};
 			});
 
-			setMdsNodes(nodes);
+			setMdsNodes([...myNodes, ...feedNodes]);
 		} catch (e) {
 			console.error(e);
 			setErrorMessage("投稿の取得に失敗しました");
@@ -200,7 +225,6 @@ export default function Posts(props: { agent: Agent }) {
 							<header>
 								<hgroup>
 									<h3>{node.authorName}</h3>
-									<p>@{node.authorHandle}</p>
 								</hgroup>
 							</header>
 							<p>{node.postText}</p>
