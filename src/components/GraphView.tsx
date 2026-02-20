@@ -1,69 +1,76 @@
-import { createEffect, createSignal, For } from "solid-js";
+import {
+	forceCenter,
+	forceLink,
+	forceManyBody,
+	forceSimulation,
+} from "d3-force";
+import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import type { GraphEdge, GraphNode } from "./Posts";
 
 interface GraphViewProps {
-	nodes: {
-		did: string;
-		x: number;
-		y: number;
-		avatarUrl: string;
-		postText: string;
-		authorName: string;
-		createdAt: string;
-		postUri: string;
-	}[];
+	nodes: GraphNode[];
+	edges: GraphEdge[];
 	onNodeClick?: (index: number) => void;
 }
 
+type D3Node = { index: number; x: number; y: number };
+
 export default function GraphView(props: GraphViewProps) {
 	let containerRef: HTMLDivElement | undefined;
-
-	const [transform, setTransform] = createSignal({
-		x: 0,
-		y: 0,
-		scale: 1,
-	});
-
+	const [positions, setPositions] = createSignal<{ x: number; y: number }[]>(
+		[],
+	);
+	const [transform, setTransform] = createSignal({ x: 0, y: 0, scale: 1 });
 	const [isDragging, setIsDragging] = createSignal(false);
 	const [dragStart, setDragStart] = createSignal({ x: 0, y: 0 });
 
+	const d3Nodes: D3Node[] = [];
+	const simulation = forceSimulation<D3Node>()
+		.force(
+			"link",
+			forceLink<D3Node, { source: number; target: number }>()
+				.id((d) => d.index)
+				.distance(100),
+		)
+		.force("charge", forceManyBody().strength(-200))
+		.force("center", forceCenter(400, 300))
+		.on("tick", () => setPositions(d3Nodes.map((n) => ({ x: n.x, y: n.y }))));
+
+	onCleanup(() => simulation.stop());
+
+	createEffect(() => {
+		const n = props.nodes.length;
+		while (d3Nodes.length < n) {
+			d3Nodes.push({ index: d3Nodes.length, x: 400, y: 300 });
+		}
+		simulation
+			.force("link")
+			// @ts-expect-error
+			?.links(props.edges.map((e) => ({ source: e.from, target: e.to })));
+		simulation.nodes(d3Nodes).alpha(0.3).restart();
+	});
+
 	createEffect(() => {
 		if (!containerRef || props.nodes.length === 0) return;
-
-		const width = containerRef.clientWidth;
-		const height = containerRef.clientHeight;
-		if (width === 0 || height === 0) return;
-
 		if (transform().x !== 0 || transform().y !== 0 || transform().scale !== 1)
 			return;
-
-		setTransform({
-			x: (width - 800) / 2,
-			y: (height - 600) / 2,
-			scale: 1,
-		});
+		const { clientWidth: w, clientHeight: h } = containerRef;
+		setTransform({ x: (w - 800) / 2, y: (h - 600) / 2, scale: 1 });
 	});
 
 	const handleWheel = (e: WheelEvent) => {
 		e.preventDefault();
-
 		if (!containerRef) return;
-
 		const rect = containerRef.getBoundingClientRect();
 		const mouseX = e.clientX - rect.left;
 		const mouseY = e.clientY - rect.top;
-
 		const delta = e.deltaY > 0 ? 0.9 : 1.1;
 		const newScale = Math.max(0.1, Math.min(5, transform().scale * delta));
-
 		const worldX = (mouseX - transform().x) / transform().scale;
 		const worldY = (mouseY - transform().y) / transform().scale;
-
-		const newX = mouseX - worldX * newScale;
-		const newY = mouseY - worldY * newScale;
-
 		setTransform({
-			x: newX,
-			y: newY,
+			x: mouseX - worldX * newScale,
+			y: mouseY - worldY * newScale,
 			scale: newScale,
 		});
 	};
@@ -85,10 +92,6 @@ export default function GraphView(props: GraphViewProps) {
 		}));
 	};
 
-	const handleMouseUp = () => {
-		setIsDragging(false);
-	};
-
 	return (
 		<div
 			ref={containerRef}
@@ -97,8 +100,8 @@ export default function GraphView(props: GraphViewProps) {
 			onWheel={handleWheel}
 			onMouseDown={handleMouseDown}
 			onMouseMove={handleMouseMove}
-			onMouseUp={handleMouseUp}
-			onMouseLeave={handleMouseUp}
+			onMouseUp={() => setIsDragging(false)}
+			onMouseLeave={() => setIsDragging(false)}
 			style={{
 				position: "relative",
 				width: "100%",
@@ -112,44 +115,48 @@ export default function GraphView(props: GraphViewProps) {
 				style={{
 					transform: `translate(${transform().x}px, ${transform().y}px) scale(${transform().scale})`,
 					"transform-origin": "0 0",
-					width: "100%",
-					height: "100%",
+					width: "800px",
+					height: "600px",
 					position: "relative",
 				}}
 			>
 				<For each={props.nodes}>
-					{(node, index) => (
-						<button
-							type="button"
-							onClick={(e) => {
-								e.stopPropagation();
-								props.onNodeClick?.(index());
-							}}
-							style={{
-								position: "absolute",
-								left: `${node.x}px`,
-								top: `${node.y}px`,
-								width: "30px",
-								height: "30px",
-								transform: "translate(-15px, -15px)",
-								padding: "0",
-								border: "none",
-								background: "none",
-								cursor: "pointer",
-							}}
-						>
-							<img
-								src={node.avatarUrl}
-								alt={node.authorName}
-								style={{
-									width: "100%",
-									height: "100%",
-									"border-radius": "50%",
-									display: "block",
-								}}
-							/>
-						</button>
-					)}
+					{(node, index) => {
+						const pos = () => positions()[index()];
+						return (
+							<Show when={pos()}>
+								<button
+									type="button"
+									onClick={(e) => {
+										e.stopPropagation();
+										props.onNodeClick?.(index());
+									}}
+									style={{
+										position: "absolute",
+										left: `${pos().x}px`,
+										top: `${pos().y}px`,
+										width: "30px",
+										height: "30px",
+										padding: "0",
+										border: "none",
+										background: "none",
+										cursor: "pointer",
+									}}
+								>
+									<img
+										src={node.avatarUrl}
+										alt={node.authorName}
+										style={{
+											width: "100%",
+											height: "100%",
+											"border-radius": "50%",
+											display: "block",
+										}}
+									/>
+								</button>
+							</Show>
+						);
+					}}
 				</For>
 			</div>
 		</div>
