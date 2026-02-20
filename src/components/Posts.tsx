@@ -33,12 +33,20 @@ export default function Posts(props: { agent: Agent }) {
 	const [currentDid, setCurrentDid] = createSignal("");
 	const [isSearching, setIsSearching] = createSignal<boolean>(false);
 	const [errorMessage, setErrorMessage] = createSignal<string>("");
+	const [selectedNodeIndex, setSelectedNodeIndex] = createSignal<number | null>(
+		null,
+	);
 	const [mdsNodes, setMdsNodes] = createSignal<
 		{
 			did: string;
 			x: number;
 			y: number;
 			avatarUrl: string;
+			postText: string;
+			authorName: string;
+			authorHandle: string;
+			createdAt: string;
+			postUri: string;
 		}[]
 	>([]);
 
@@ -146,12 +154,18 @@ export default function Posts(props: { agent: Agent }) {
 				const feedItem = feedItems[i];
 				const did = feedItem.post.author.did;
 				const profile = feedItem.post.author;
+				const record = feedItem.post.record as AppBskyFeedPost.Main;
 
 				return {
 					did,
 					x: coord.x,
 					y: coord.y,
 					avatarUrl: profile.avatar!,
+					postText: record.text,
+					authorName: profile.displayName || profile.handle,
+					authorHandle: profile.handle,
+					createdAt: record.createdAt,
+					postUri: feedItem.post.uri,
 				};
 			});
 
@@ -173,7 +187,31 @@ export default function Posts(props: { agent: Agent }) {
 				<p class="text-red-500">{errorMessage()}</p>
 			</Show>
 			<Show when={mdsNodes().length > 0}>
-				<GraphView nodes={mdsNodes()} />
+				<GraphView
+					nodes={mdsNodes()}
+					onNodeClick={(index: number) => setSelectedNodeIndex(index)}
+				/>
+			</Show>
+			<Show when={selectedNodeIndex() !== null}>
+				{(() => {
+					const node = mdsNodes()[selectedNodeIndex()!];
+					return (
+						<article>
+							<header>
+								<hgroup>
+									<h3>{node.authorName}</h3>
+									<p>@{node.authorHandle}</p>
+								</hgroup>
+							</header>
+							<p>{node.postText}</p>
+							<footer>
+								<small>
+									{new Date(node.createdAt).toLocaleString("ja-JP")}
+								</small>
+							</footer>
+						</article>
+					);
+				})()}
 			</Show>
 		</div>
 	);

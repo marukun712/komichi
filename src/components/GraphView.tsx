@@ -6,7 +6,13 @@ interface GraphViewProps {
 		x: number;
 		y: number;
 		avatarUrl: string;
+		postText: string;
+		authorName: string;
+		authorHandle: string;
+		createdAt: string;
+		postUri: string;
 	}[];
+	onNodeClick?: (index: number) => void;
 }
 
 export default function GraphView(props: GraphViewProps) {
@@ -113,19 +119,29 @@ export default function GraphView(props: GraphViewProps) {
 				}}
 			>
 				<For each={props.nodes}>
-					{(node) => (
-						<div
+					{(node, index) => (
+						<button
+							type="button"
+							onClick={(e) => {
+								e.stopPropagation();
+								props.onNodeClick?.(index());
+							}}
 							style={{
 								position: "absolute",
 								left: `${node.x}px`,
 								top: `${node.y}px`,
 								width: "30px",
 								height: "30px",
+								transform: "translate(-15px, -15px)",
+								padding: "0",
+								border: "none",
+								background: "none",
+								cursor: "pointer",
 							}}
 						>
 							<img
 								src={node.avatarUrl}
-								alt=""
+								alt={node.authorName}
 								style={{
 									width: "100%",
 									height: "100%",
@@ -133,7 +149,7 @@ export default function GraphView(props: GraphViewProps) {
 									display: "block",
 								}}
 							/>
-						</div>
+						</button>
 					)}
 				</For>
 			</div>
