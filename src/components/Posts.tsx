@@ -4,7 +4,11 @@ import type { Agent, AppBskyActorProfile } from "@atproto/api";
 import * as druid from "@saehrimnir/druidjs";
 import { createSignal, onMount, Show } from "solid-js";
 import { cosineSimilarity, getVec } from "../lib/Embedding";
-import { resolveAuthorFeed, resolveProfile } from "../lib/Resolver";
+import {
+	resolveAuthorFeed,
+	resolveProfile,
+	resolveRecords,
+} from "../lib/Resolver";
 import GraphView from "./GraphView";
 
 function generateNodes(matrix: number[][]) {
@@ -108,10 +112,15 @@ export default function Posts(props: { agent: Agent }) {
 			}
 			const profile = myProfile.data.value as AppBskyActorProfile.Main;
 
-			const myPostsResult = await props.agent.com.atproto.repo.listRecords({
-				repo: currentDid(),
-				collection: "app.bsky.feed.post",
-			});
+			const myPostsResult = await resolveRecords(
+				currentDid(),
+				"app.bsky.feed.post",
+			);
+			if (!myPostsResult || !myPostsResult.ok) {
+				setErrorMessage("フィードの取得に失敗しました");
+				return;
+			}
+
 			const myPosts = myPostsResult.data.records
 				.map((r) => r.value as AppBskyFeedPost.Main)
 				.filter((r) => r.text !== "");
