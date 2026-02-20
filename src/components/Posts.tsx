@@ -1,14 +1,10 @@
 import type { AppBskyFeedPost } from "@atcute/bluesky";
-import type { Agent, AppBskyActorProfile } from "@atproto/api";
+import type { Agent } from "@atproto/api";
 // @ts-expect-error
 import * as druid from "@saehrimnir/druidjs";
 import { createSignal, onMount, Show } from "solid-js";
 import { cosineSimilarity, getVec } from "../lib/Embedding";
-import {
-	resolveAuthorFeed,
-	resolveProfile,
-	resolveRecords,
-} from "../lib/Resolver";
+import { resolveAuthorFeed } from "../lib/Resolver";
 import GraphView from "./GraphView";
 
 function generateNodes(matrix: number[][]) {
@@ -100,37 +96,13 @@ export default function Posts(props: { agent: Agent }) {
 				setErrorMessage("フィードの取得に失敗しました");
 				return;
 			}
-			const feedItems = feed.data.feed
-				.filter((r) => r.post.author.did !== currentDid())
-				.filter((r) => (r.post.record.text as string) !== "");
+			const feedItems = feed.data.feed.filter(
+				(r) => (r.post.record.text as string) !== "",
+			);
 			const parsedFeed = feedItems.map((r) => r.post.record.text as string);
 
-			const myProfile = await resolveProfile(currentDid());
-			if (!myProfile || !myProfile.ok) {
-				setErrorMessage("プロフィールの取得に失敗しました");
-				return;
-			}
-			const profile = myProfile.data.value as AppBskyActorProfile.Main;
-
-			const myPostsResult = await resolveRecords(
-				currentDid(),
-				"app.bsky.feed.post",
-			);
-			if (!myPostsResult || !myPostsResult.ok) {
-				setErrorMessage("フィードの取得に失敗しました");
-				return;
-			}
-
-			const myPosts = myPostsResult.data.records
-				.map((r) => r.value as AppBskyFeedPost.Main)
-				.filter((r) => r.text !== "");
-			const myPostRecords = myPostsResult.data.records.filter(
-				(r) => (r.value as AppBskyFeedPost.Main).text !== "",
-			);
-
-			const allTexts = [...myPosts.map((r) => r.text), ...parsedFeed];
 			const allEmbeddings = await Promise.all(
-				allTexts.map((text) => getVec(text)),
+				parsedFeed.map((text) => getVec(text)),
 			);
 
 			const n = allEmbeddings.length;
@@ -145,22 +117,7 @@ export default function Posts(props: { agent: Agent }) {
 
 			const allCoords = generateNodes(distanceMatrix);
 
-			const myCount = myPosts.length;
-
-			const myNodes = allCoords.slice(0, myCount).map((coord, i) => ({
-				did: currentDid(),
-				x: coord.x,
-				y: coord.y,
-				// @ts-expect-error
-				avatarUrl: `https://cdn.bsky.app/img/avatar/plain/${currentDid()}/${profile.avatar?.ref.$link}`,
-				postText: myPosts[i].text,
-				authorName: profile.displayName!,
-				createdAt: myPosts[i].createdAt,
-				postUri: myPostRecords[i].uri,
-				isOwn: true,
-			}));
-
-			const feedNodes = allCoords.slice(myCount).map((coord, i) => {
+			const feedNodes = allCoords.map((coord, i) => {
 				const feedItem = feedItems[i];
 				const profile = feedItem.post.author;
 				const record = feedItem.post.record as AppBskyFeedPost.Main;
@@ -173,11 +130,10 @@ export default function Posts(props: { agent: Agent }) {
 					authorName: profile.displayName!,
 					createdAt: record.createdAt,
 					postUri: feedItem.post.uri,
-					isOwn: false,
 				};
 			});
 
-			setMdsNodes([...myNodes, ...feedNodes]);
+			setMdsNodes(feedNodes);
 		} catch (e) {
 			console.error(e);
 			setErrorMessage("投稿の取得に失敗しました");
