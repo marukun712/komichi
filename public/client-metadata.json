@@ -1,9 +1,9 @@
 {
-	"client_id": "http://localhost:3000/client-metadata.json",
+	"client_id": "https://komichi.maril.blue/client-metadata.json",
 	"client_name": "komichi",
-	"client_uri": "http://localhost:3000",
-	"redirect_uris": ["https://localhost:3000/callback"],
-	"scope": "atproto",
+	"client_uri": "https://komichi.maril.blue",
+	"redirect_uris": ["https://komichi.maril.blue/callback"],
+	"scope": "atproto transition:generic",
 	"grant_types": ["authorization_code", "refresh_token"],
 	"response_types": ["code"],
 	"token_endpoint_auth_method": "none",

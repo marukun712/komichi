@@ -42,12 +42,25 @@ export default function Posts(props: { agent: Agent }) {
 				return;
 			}
 
+			const tl = await props.agent.getTimeline({ limit: 100 });
+
 			const feedItems = feed.data.feed.filter(
 				(r) => (r.post.record.text as string) !== "",
 			);
 
+			const tlItems = tl.data.feed.filter(
+				(r) => (r.post.record.text as string) !== "",
+			);
+
+			const seen = new Set<string>();
+			const all = [...tlItems, ...feedItems].filter((item) => {
+				if (seen.has(item.post.uri)) return false;
+				seen.add(item.post.uri);
+				return true;
+			});
+
 			const entries = await Promise.all(
-				feedItems.map(async (item) => {
+				all.map(async (item) => {
 					const record = item.post.record as AppBskyFeedPost.Main;
 					const node: GraphNode = {
 						postUri: item.post.uri,
@@ -112,7 +125,7 @@ export default function Posts(props: { agent: Agent }) {
 
 		const results = index.searchKNN(vector, 6);
 		const newNeighbors = results
-			.map((r) => metaMap.get(r.id as unknown as number))
+			.map((r) => metaMap.get(r.id))
 			.filter((n): n is GraphNode => n !== undefined && !visited.has(n.postUri))
 			.slice(0, 5);
 

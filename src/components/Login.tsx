@@ -9,9 +9,9 @@ export default function Login() {
 	const [agent, setAgent] = createSignal<Agent | null>(null);
 
 	onMount(async () => {
-		const client = new BrowserOAuthClient({
+		const client = await BrowserOAuthClient.load({
+			clientId: `http://localhost?scope=atproto%20transition%3Ageneric&redirect_uri=${encodeURIComponent(`http://127.0.0.1:3000/`)}`,
 			handleResolver: "https://bsky.social",
-			clientMetadata: undefined,
 		});
 
 		setClient(client);
