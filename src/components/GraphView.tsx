@@ -9,7 +9,7 @@ import {
 	onMount,
 	Show,
 } from "solid-js";
-import type { GraphNode, Index } from "./Posts";
+import type { GraphNode, Index } from "./AppView";
 
 type LayoutNode = { id: string; x: number; y: number };
 

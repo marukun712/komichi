@@ -1,12 +1,14 @@
 import { Agent } from "@atproto/api";
 import { BrowserOAuthClient } from "@atproto/oauth-client-browser";
 import { createSignal, onMount, Show } from "solid-js";
-import Posts from "./Posts";
+import AppViewMode from "./AppView";
+import PDSMode from "./PDSMode";
 
 export default function Login() {
 	const [handle, setHandle] = createSignal<string>("");
 	const [client, setClient] = createSignal<BrowserOAuthClient | null>(null);
 	const [agent, setAgent] = createSignal<Agent | null>(null);
+	const [mode, setMode] = createSignal<"AppView" | "PDS">("AppView");
 
 	onMount(async () => {
 		const client = await BrowserOAuthClient.load({
@@ -74,7 +76,24 @@ export default function Login() {
 				</form>
 			}
 		>
-			{(a) => <Posts agent={a()} />}
+			{(a) => (
+				<div>
+					<div class="grid">
+						<button type="button" onClick={() => setMode("AppView")}>
+							AppViewで探索
+						</button>
+						<button type="button" onClick={() => setMode("PDS")}>
+							PDSで探索
+						</button>
+					</div>
+					<Show when={mode() === "AppView"}>
+						<AppViewMode agent={a()} />
+					</Show>
+					<Show when={mode() === "PDS"}>
+						<PDSMode agent={a()} />
+					</Show>
+				</div>
+			)}
 		</Show>
 	);
 }

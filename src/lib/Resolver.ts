@@ -9,7 +9,12 @@ import {
 	WebDidDocumentResolver,
 	WellKnownHandleResolver,
 } from "@atcute/identity-resolver";
-import { isActorIdentifier } from "@atcute/lexicons/syntax";
+import {
+	isActorIdentifier,
+	type ResourceUri,
+	type Tid,
+} from "@atcute/lexicons/syntax";
+import type { Agent } from "@atproto/api";
 
 export const didResolver = new CompositeDidDocumentResolver({
 	methods: {
@@ -81,6 +86,29 @@ export async function resolveRecords(
 	}
 }
 
+export async function resolvePost(repo: string, rkey: Tid) {
+	try {
+		if (!isActorIdentifier(repo)) return null;
+		const actor = await actorResolver.resolve(repo);
+		const rpc = new Client({
+			handler: simpleFetchHandler({ service: actor.pds }),
+		});
+
+		const res = await rpc.get("com.atproto.repo.getRecord", {
+			params: {
+				repo: actor.did,
+				collection: "app.bsky.feed.post",
+				rkey,
+			},
+		});
+
+		return res;
+	} catch (e) {
+		console.error(e);
+		return null;
+	}
+}
+
 export async function resolveProfile(repo: string) {
 	try {
 		if (!isActorIdentifier(repo)) return null;
@@ -102,4 +130,17 @@ export async function resolveProfile(repo: string) {
 		console.error(e);
 		return null;
 	}
+}
+
+export async function writeIndex(
+	rkey: Tid,
+	subjects: ResourceUri[],
+	agent: Agent,
+) {
+	await agent.com.atproto.repo.putRecord({
+		repo: agent.assertDid,
+		collection: "blue.maril.komichi.index",
+		rkey,
+		record: { subjects, createdAt: new Date().toISOString() },
+	});
 }

@@ -1,10 +1,17 @@
 import type { AppBskyFeedPost } from "@atcute/bluesky";
+import {
+	isResourceUri,
+	parseResourceUri,
+	type ResourceUri,
+	type Tid,
+} from "@atcute/lexicons";
+import { isTid } from "@atcute/lexicons/syntax";
 import type { Agent } from "@atproto/api";
 import { HNSW } from "hnsw";
 import { createSignal, onMount, Show } from "solid-js";
 import { createStore } from "solid-js/store";
 import { getVec } from "../lib/Embedding";
-import { resolveAuthorFeed } from "../lib/Resolver";
+import { resolveAuthorFeed, writeIndex } from "../lib/Resolver";
 import GraphView from "./GraphView";
 
 export type GraphNode = {
@@ -21,11 +28,13 @@ export type Index = {
 	to: string[];
 };
 
-export default function Posts(props: { agent: Agent }) {
+export default function AppViewMode(props: { agent: Agent }) {
 	const [isLoading, setIsLoading] = createSignal(false);
 	const [errorMessage, setErrorMessage] = createSignal("");
+
 	const [selected, setSelected] = createSignal<string | null>(null);
 	const [graphIndex, setGraphIndex] = createSignal<Index[]>([]);
+
 	const [index, setIndex] = createSignal<HNSW | null>(null);
 	const [metaMap, setMetaMap] = createStore<Record<string, GraphNode>>();
 
@@ -95,7 +104,7 @@ export default function Posts(props: { agent: Agent }) {
 			const seed = entries[0].node;
 			visited.add(seed.postUri);
 			setSelected(seed.postUri);
-			exploreNode(seed.postUri);
+			exploreNode();
 		} catch (e) {
 			console.error(e);
 			setErrorMessage("フィードの取得に失敗しました");
@@ -113,21 +122,38 @@ export default function Posts(props: { agent: Agent }) {
 		return id ? metaMap[id] : undefined;
 	};
 
-	const exploreNode = (id: string | null) => {
+	const cacheIndex = async (rkey: Tid, subjects: ResourceUri[]) => {
+		await writeIndex(rkey, subjects, props.agent);
+	};
+
+	const exploreNode = () => {
+		const id = selected();
 		const idx = index();
 		if (!idx || !id) return;
 		const vector = vectorMap.get(id);
 		if (!vector) return;
 
-		const results = idx.searchKNN(vector, 16);
+		const results = idx.searchKNN(vector, 51);
 		const neighbors = results
 			// @ts-expect-error
 			.map((r) => r.id as string)
 			.filter((id) => !visited.has(id))
-			.slice(0, 15);
+			.slice(0, 50);
 
 		for (const neighbor of neighbors) {
 			visited.add(neighbor);
+		}
+
+		const repo = parseResourceUri(id);
+		if (
+			repo.ok &&
+			repo.value.repo === props.agent.assertDid &&
+			isTid(repo.value.rkey)
+		) {
+			cacheIndex(
+				repo.value.rkey,
+				neighbors.filter((uri) => isResourceUri(uri)),
+			);
 		}
 
 		setGraphIndex((prev) => [...prev, { from: id, to: neighbors }]);
@@ -142,7 +168,7 @@ export default function Posts(props: { agent: Agent }) {
 				<p>読み込み中...</p>
 			</Show>
 			<Show when={graphIndex().length > 0}>
-				<button type="button" onClick={() => exploreNode(selected())}>
+				<button type="button" onClick={() => exploreNode()}>
 					探索
 				</button>
 				<GraphView

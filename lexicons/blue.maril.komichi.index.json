@@ -1,0 +1,22 @@
+{
+	"lexicon": 1,
+	"id": "blue.maril.komichi.index",
+	"defs": {
+		"main": {
+			"type": "record",
+			"description": "komichi adjacency graph",
+			"key": "tid",
+			"record": {
+				"type": "object",
+				"required": ["subjects", "createdAt"],
+				"properties": {
+					"subjects": {
+						"type": "array",
+						"items": { "type": "string", "format": "at-uri" }
+					},
+					"createdAt": { "type": "string", "format": "datetime" }
+				}
+			}
+		}
+	}
+}
