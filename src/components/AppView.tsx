@@ -137,7 +137,7 @@ export default function AppViewMode(props: { agent: Agent }) {
 		const neighbors = results
 			// @ts-expect-error
 			.map((r) => r.id as string)
-			.filter((id) => !visited.has(id))
+			.filter((nid) => nid !== id && !visited.has(nid))
 			.slice(0, 50);
 
 		for (const neighbor of neighbors) {

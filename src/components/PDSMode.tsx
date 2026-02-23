@@ -41,7 +41,7 @@ export default function PDSMode(props: { agent: Agent }) {
 			setErrorMessage("インデックスの取得に失敗しました");
 			return;
 		}
-		if (index.data.records.length < 0) {
+		if (index.data.records.length === 0) {
 			setErrorMessage("そのユーザーはインデックスを持っていません");
 			return;
 		}
@@ -57,7 +57,7 @@ export default function PDSMode(props: { agent: Agent }) {
 				if (!uri.ok) {
 					return null;
 				}
-				uri.value.collection === "app.bsky.feed.post";
+				uri.value.collection = "app.bsky.feed.post";
 				flat.push(i.uri);
 				return {
 					from: i.uri,
@@ -108,8 +108,8 @@ export default function PDSMode(props: { agent: Agent }) {
 			}),
 		);
 
-		const selected = parsed[0].from;
-		if (!selected) return;
+		if (!parsed.length) return;
+		const selected = parsed[0]?.from;
 
 		setGraphIndex((prev) => [...prev, ...parsed]);
 		setSelected(selected);
