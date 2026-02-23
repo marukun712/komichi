@@ -14,6 +14,7 @@ import type { GraphNode, Index } from "./AppView";
 import GraphView from "./GraphView";
 
 export default function PDSMode(props: { agent: Agent }) {
+	const [isLoading, setIsLoading] = createSignal(false);
 	const [errorMessage, setErrorMessage] = createSignal("");
 
 	const [selected, setSelected] = createSignal<string | null>(null);
@@ -21,7 +22,10 @@ export default function PDSMode(props: { agent: Agent }) {
 
 	const [metaMap, setMetaMap] = createStore<Record<string, GraphNode>>();
 
+	const visited = new Set<string>();
+
 	const getGraph = async (did: string) => {
+		setIsLoading(true);
 		const index = await resolveRecords(did, "blue.maril.komichi.index");
 		if (!index || !index.ok) {
 			setErrorMessage("インデックスの取得に失敗しました");
@@ -29,6 +33,10 @@ export default function PDSMode(props: { agent: Agent }) {
 		}
 		if (index.data.records.length === 0) {
 			setErrorMessage("そのユーザーはインデックスを持っていません");
+			return;
+		}
+		if (visited.has(did)) {
+			setErrorMessage("そのユーザーのインデックスはすでに取得しています");
 			return;
 		}
 
@@ -96,6 +104,8 @@ export default function PDSMode(props: { agent: Agent }) {
 
 		setGraphIndex((prev) => [...prev, ...parsed]);
 		setSelected(selected);
+		visited.add(selected);
+		setIsLoading(false);
 	};
 
 	onMount(async () => {
@@ -124,9 +134,11 @@ export default function PDSMode(props: { agent: Agent }) {
 	return (
 		<div class="space-y-4">
 			<Show when={errorMessage()}>
-				<p class="text-red-500">{errorMessage()}</p>
+				<p>{errorMessage()}</p>
 			</Show>
-
+			<Show when={isLoading()}>
+				<p>読み込み中...</p>
+			</Show>
 			<Show when={graphIndex().length > 0}>
 				<button type="button" onClick={() => exploreNode()}>
 					探索
