@@ -38,14 +38,17 @@ export default function PDSMode(props: { agent: Agent }) {
 		const index = await resolveRecords(did, "blue.maril.komichi.index");
 		if (!index || !index.ok) {
 			setErrorMessage("インデックスの取得に失敗しました");
+			setIsLoading(false);
 			return;
 		}
 		if (index.data.records.length === 0) {
 			setErrorMessage("そのユーザーはインデックスを持っていません");
+			setIsLoading(false);
 			return;
 		}
 		if (visited.has(did)) {
 			setErrorMessage("そのユーザーのインデックスはすでに取得しています");
+			setIsLoading(false);
 			return;
 		}
 
@@ -74,80 +77,76 @@ export default function PDSMode(props: { agent: Agent }) {
 				})
 				.filter((i) => i !== null);
 
-			await Promise.all(
-				flat.map(async (u) => {
-					const uri = parseResourceUri(u);
-					if (!uri.ok || !uri.value.rkey) {
-						return null;
-					}
-
-					if (!postCache.has(u)) {
-						postCache.set(u, await resolvePost(uri.value.repo, uri.value.rkey));
-					}
-					const record = postCache.get(u);
-
-					if (
-						!record ||
-						!record.ok ||
-						!is(AppBskyFeedPost.mainSchema, record.data.value)
-					) {
-						return null;
-					}
-
-					if (!profileCache.has(uri.value.repo)) {
-						profileCache.set(
-							uri.value.repo,
-							await resolveProfile(uri.value.repo),
-						);
-					}
-					const profile = profileCache.get(uri.value.repo);
-
-					if (
-						!profile ||
-						!profile.ok ||
-						!is(AppBskyActorProfile.mainSchema, profile.data.value)
-					) {
-						return null;
-					}
-
-					const text = record.data.value.text;
-
-					if (!vecCache.has(text)) {
-						vecCache.set(text, Array.from(await getVec(text)));
-					}
-					const vector = vecCache.get(text)!;
-
-					const keywords = await extractKeywords(
-						record.data.value.text,
-						vector,
-						1,
-					);
-
-					setMetaMap(u, {
-						postUri: u,
-						did: uri.value.repo,
-						// @ts-expect-error
-						avatarUrl: `https://cdn.bsky.app/img/avatar/plain/${uri.value.repo}/${profile.data.value.avatar.ref.$link}`,
-						postText: record.data.value.text,
-						authorName: profile.data.value.displayName!,
-						createdAt: record.data.value.createdAt,
-						keywords,
-					});
-				}),
-			);
-
-			if (!parsed.length) return;
-			const selected = parsed[0]?.from;
+			if (!parsed.length) {
+				setIsLoading(false);
+				return;
+			}
 
 			setGraphIndex((prev) => [...prev, ...parsed]);
-			setSelected(selected);
+			setSelected(parsed[0]?.from);
 			visited.add(did);
 			setIsLoading(false);
+
+			for (const u of flat) {
+				const uri = parseResourceUri(u);
+				if (!uri.ok || !uri.value.rkey) continue;
+
+				if (!postCache.has(u)) {
+					postCache.set(u, await resolvePost(uri.value.repo, uri.value.rkey));
+				}
+				const record = postCache.get(u);
+
+				if (
+					!record ||
+					!record.ok ||
+					!is(AppBskyFeedPost.mainSchema, record.data.value)
+				) {
+					continue;
+				}
+
+				if (!profileCache.has(uri.value.repo)) {
+					profileCache.set(
+						uri.value.repo,
+						await resolveProfile(uri.value.repo),
+					);
+				}
+				const profile = profileCache.get(uri.value.repo);
+
+				if (
+					!profile ||
+					!profile.ok ||
+					!is(AppBskyActorProfile.mainSchema, profile.data.value)
+				) {
+					continue;
+				}
+
+				const text = record.data.value.text;
+
+				if (!vecCache.has(text)) {
+					vecCache.set(text, Array.from(await getVec(text)));
+				}
+				const vector = vecCache.get(text)!;
+
+				const keywords = await extractKeywords(
+					record.data.value.text,
+					vector,
+					1,
+				);
+
+				setMetaMap(u, {
+					postUri: u,
+					did: uri.value.repo,
+					// @ts-expect-error
+					avatarUrl: `https://cdn.bsky.app/img/avatar/plain/${uri.value.repo}/${profile.data.value.avatar.ref.$link}`,
+					postText: record.data.value.text,
+					authorName: profile.data.value.displayName!,
+					createdAt: record.data.value.createdAt,
+					keywords,
+				});
+			}
 		} catch (e) {
 			console.error(e);
 			setErrorMessage("インデックスの取得に失敗しました");
-			setIsLoading(false);
-		} finally {
 			setIsLoading(false);
 		}
 	};
