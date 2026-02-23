@@ -1,4 +1,4 @@
-import { getVec } from "./Embedding";
+import { getQueryVec } from "./Embedding";
 
 type DataArray = number[] | Float32Array;
 
@@ -36,7 +36,7 @@ export async function extractKeywords(
 	const scored = await Promise.all(
 		tokens.map(async (token) => ({
 			token,
-			score: cosineSimilarity(docVec, Array.from(await getVec(token))),
+			score: cosineSimilarity(docVec, Array.from(await getQueryVec(token))),
 		})),
 	);
 

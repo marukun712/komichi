@@ -116,7 +116,7 @@ export default function PDSMode(props: { agent: Agent }) {
 
 		setGraphIndex((prev) => [...prev, ...parsed]);
 		setSelected(selected);
-		visited.add(selected);
+		visited.add(did);
 		setIsLoading(false);
 	};
 

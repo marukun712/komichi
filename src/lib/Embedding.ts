@@ -12,3 +12,11 @@ export async function getVec(text: string) {
 	});
 	return output.data;
 }
+
+export async function getQueryVec(text: string) {
+	const output = await extractor(`query: ${text}`, {
+		pooling: "mean",
+		normalize: true,
+	});
+	return output.data;
+}
