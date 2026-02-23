@@ -10,21 +10,8 @@ import { createSignal, onMount, Show } from "solid-js";
 import { createStore } from "solid-js/store";
 import { BlueMarilKomichiIndex } from "../lexicons";
 import { resolvePost, resolveProfile, resolveRecords } from "../lib/Resolver";
+import type { GraphNode, Index } from "./AppView";
 import GraphView from "./GraphView";
-
-export type GraphNode = {
-	postUri: string;
-	did: string;
-	avatarUrl: string;
-	postText: string;
-	authorName: string;
-	createdAt: string;
-};
-
-export type Index = {
-	from: string;
-	to: string[];
-};
 
 export default function PDSMode(props: { agent: Agent }) {
 	const [errorMessage, setErrorMessage] = createSignal("");
@@ -33,7 +20,6 @@ export default function PDSMode(props: { agent: Agent }) {
 	const [graphIndex, setGraphIndex] = createSignal<Index[]>([]);
 
 	const [metaMap, setMetaMap] = createStore<Record<string, GraphNode>>();
-	const visited = new Set<string>();
 
 	const getGraph = async (did: string) => {
 		const index = await resolveRecords(did, "blue.maril.komichi.index");
@@ -63,9 +49,7 @@ export default function PDSMode(props: { agent: Agent }) {
 					from: i.uri,
 					to: i.value.subjects
 						.filter((u) => isResourceUri(u))
-						.filter((u) => !visited.has(u))
 						.map((u) => {
-							visited.add(u);
 							flat.push(u);
 							return u;
 						}),
@@ -113,7 +97,6 @@ export default function PDSMode(props: { agent: Agent }) {
 
 		setGraphIndex((prev) => [...prev, ...parsed]);
 		setSelected(selected);
-		visited.add(selected);
 	};
 
 	onMount(async () => {

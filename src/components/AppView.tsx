@@ -39,7 +39,6 @@ export default function AppViewMode(props: { agent: Agent }) {
 	const [metaMap, setMetaMap] = createStore<Record<string, GraphNode>>();
 
 	const vectorMap = new Map<string, number[]>();
-	const visited = new Set<string>();
 
 	onMount(async () => {
 		setIsLoading(true);
@@ -102,7 +101,6 @@ export default function AppViewMode(props: { agent: Agent }) {
 			);
 
 			const seed = entries[0].node;
-			visited.add(seed.postUri);
 			setSelected(seed.postUri);
 			exploreNode();
 		} catch (e) {
@@ -137,12 +135,8 @@ export default function AppViewMode(props: { agent: Agent }) {
 		const neighbors = results
 			// @ts-expect-error
 			.map((r) => r.id as string)
-			.filter((nid) => nid !== id && !visited.has(nid))
+			.filter((nid) => nid !== id)
 			.slice(0, 50);
-
-		for (const neighbor of neighbors) {
-			visited.add(neighbor);
-		}
 
 		const repo = parseResourceUri(id);
 		if (
