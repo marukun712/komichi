@@ -77,15 +77,30 @@ export default function Login() {
 			}
 		>
 			{(a) => (
-				<div>
-					<div class="grid">
-						<button type="button" onClick={() => setMode("AppView")}>
-							AppViewで探索
-						</button>
-						<button type="button" onClick={() => setMode("PDS")}>
-							PDSで探索
-						</button>
+				<div class="space-y-4">
+					<div class="inline-flex gap-2">
+						<label>
+							<input
+								type="radio"
+								name="mode"
+								value="AppView"
+								checked={mode() === "AppView"}
+								onInput={() => setMode("AppView")}
+							/>
+							AppView
+						</label>
+						<label>
+							<input
+								type="radio"
+								name="mode"
+								value="PDS"
+								checked={mode() === "PDS"}
+								onInput={() => setMode("PDS")}
+							/>
+							PDS
+						</label>
 					</div>
+
 					<Show when={mode() === "AppView"}>
 						<AppViewMode agent={a()} />
 					</Show>

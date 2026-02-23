@@ -60,7 +60,7 @@ export default function AppViewMode(props: { agent: Agent }) {
 		setErrorMessage("");
 
 		try {
-			const feed = await resolveAuthorFeed(props.agent.assertDid);
+			const feed = await resolveAuthorFeed(props.agent.assertDid, 50);
 			if (!feed?.ok) {
 				setErrorMessage("フィードの取得に失敗しました");
 				return;
@@ -188,12 +188,12 @@ export default function AppViewMode(props: { agent: Agent }) {
 			),
 		);
 
-		const results = idx.searchKNN(vector, 51);
+		const results = idx.searchKNN(vector, 31);
 		const neighbors = results
 			// @ts-expect-error
 			.map((r) => r.id as string)
 			.filter((nid) => nid !== id)
-			.slice(0, 50);
+			.slice(0, 30);
 
 		const repo = parseResourceUri(id);
 		if (
