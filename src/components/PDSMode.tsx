@@ -43,7 +43,6 @@ export default function PDSMode(props: { agent: Agent }) {
 				if (!uri.ok) {
 					return null;
 				}
-				uri.value.collection = "app.bsky.feed.post";
 				flat.push(i.uri);
 				return {
 					from: i.uri,

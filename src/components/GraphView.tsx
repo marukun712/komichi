@@ -31,32 +31,30 @@ export default function GraphView(props: {
 	createEffect(() => {
 		for (const { from, to } of props.index) {
 			if (!g.hasNode(from))
-				g.addNode(from, {
-					x: Math.random(),
-					y: Math.random(),
-				});
+				g.addNode(from, { x: Math.random(), y: Math.random() });
 			for (const t of to) {
 				if (!g.hasNode(t)) {
 					const fp = g.getNodeAttributes(from);
-					g.addNode(t, {
-						x: fp.x + Math.random(),
-						y: fp.y + Math.random(),
-					});
+					g.addNode(t, { x: fp.x + Math.random(), y: fp.y + Math.random() });
 				}
-				if (!g.hasEdge(from, t)) {
-					g.addEdge(from, t);
-				}
+				if (!g.hasEdge(from, t)) g.addEdge(from, t);
 			}
 		}
-		if (!layout.isRunning()) {
-			layout.start();
-			setTimeout(() => {
-				const ns: LayoutNode[] = [];
-				g.forEachNode((id, { x, y }) => ns.push({ id, x, y }));
-				setNodes(ns);
-				layout.stop();
-			}, 3000);
-		}
+
+		layout.stop();
+		layout.start();
+
+		const timer = setTimeout(() => {
+			const ns: LayoutNode[] = [];
+			g.forEachNode((id, { x, y }) => ns.push({ id, x, y }));
+			setNodes(ns);
+			layout.stop();
+		}, 3000);
+
+		onCleanup(() => {
+			clearTimeout(timer);
+			layout.stop();
+		});
 	});
 
 	onCleanup(() => {
