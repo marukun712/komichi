@@ -23,6 +23,7 @@ export type GraphNode = {
 	postText: string;
 	authorName: string;
 	createdAt: string;
+	keywords: string;
 };
 
 export type Index = {
@@ -80,6 +81,8 @@ export default function AppViewMode(props: { agent: Agent }) {
 				feedItems.map(async (item) => {
 					if (!is(AppBskyFeedPost.mainSchema, item.post.record)) return null;
 					const record = item.post.record;
+					const vector: number[] = Array.from(await getVec(record.text));
+					const keywords = await extractKeywords(record.text, vector, 1);
 					const node: GraphNode = {
 						postUri: item.post.uri,
 						did: item.post.author.did,
@@ -87,8 +90,8 @@ export default function AppViewMode(props: { agent: Agent }) {
 						postText: record.text,
 						authorName: item.post.author.displayName!,
 						createdAt: record.createdAt,
+						keywords,
 					};
-					const vector: number[] = Array.from(await getVec(record.text));
 					return { node, vector };
 				}),
 			);
@@ -164,6 +167,8 @@ export default function AppViewMode(props: { agent: Agent }) {
 				.map(async (p) => {
 					if (!is(AppBskyFeedPost.mainSchema, p.record)) return null;
 					const record = p.record;
+					const vector: number[] = Array.from(await getVec(record.text));
+					const keywords = await extractKeywords(record.text, vector, 1);
 					const n: GraphNode = {
 						postUri: p.uri,
 						did: p.author.did,
@@ -171,8 +176,8 @@ export default function AppViewMode(props: { agent: Agent }) {
 						postText: record.text,
 						authorName: p.author.displayName!,
 						createdAt: record.createdAt,
+						keywords,
 					};
-					const vector: number[] = Array.from(await getVec(record.text));
 					return { node: n, vector };
 				}),
 		);

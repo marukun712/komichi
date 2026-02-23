@@ -9,6 +9,8 @@ import type { Agent } from "@atproto/api";
 import { createSignal, onMount, Show } from "solid-js";
 import { createStore } from "solid-js/store";
 import { BlueMarilKomichiIndex } from "../lexicons";
+import { getVec } from "../lib/Embedding";
+import { extractKeywords } from "../lib/Keyword";
 import { resolvePost, resolveProfile, resolveRecords } from "../lib/Resolver";
 import type { GraphNode, Index } from "./AppView";
 import GraphView from "./GraphView";
@@ -87,6 +89,15 @@ export default function PDSMode(props: { agent: Agent }) {
 					return null;
 				}
 
+				const vector: number[] = Array.from(
+					await getVec(record.data.value.text),
+				);
+				const keywords = await extractKeywords(
+					record.data.value.text,
+					vector,
+					1,
+				);
+
 				setMetaMap(u, {
 					postUri: u,
 					did: uri.value.repo,
@@ -95,6 +106,7 @@ export default function PDSMode(props: { agent: Agent }) {
 					postText: record.data.value.text,
 					authorName: profile.data.value.displayName!,
 					createdAt: record.data.value.createdAt,
+					keywords,
 				});
 			}),
 		);

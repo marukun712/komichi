@@ -87,36 +87,83 @@ export default function GraphView(props: {
 						return (
 							<Show when={meta}>
 								{(m) => (
-									<button
-										type="button"
-										onClick={(e) => {
-											e.stopPropagation();
-											props.onNodeClick(n.id);
-										}}
-										class="node"
+									<div
 										style={{
 											position: "absolute",
-											left: `${n.x * 30 + 400}px`,
-											top: `${n.y * 30 + 300}px`,
-											width: "30px",
-											height: "30px",
-											padding: "0",
-											border: "none",
-											background: "none",
-											cursor: "pointer",
+											left: `${n.x * 60 + 400}px`,
+											top: `${n.y * 60 + 300}px`,
+											display: "flex",
+											"flex-direction": "column",
+											"align-items": "center",
+											gap: "4px",
 										}}
 									>
-										<img
-											src={m().avatarUrl}
-											alt={m().authorName}
-											style={{
-												width: "100%",
-												height: "100%",
-												"border-radius": "50%",
-												display: "block",
+										<button
+											type="button"
+											onClick={(e) => {
+												e.stopPropagation();
+												props.onNodeClick(n.id);
 											}}
-										/>
-									</button>
+											class="node"
+											style={{
+												width: "30px",
+												height: "30px",
+												padding: "0",
+												border: "none",
+												background: "none",
+												cursor: "pointer",
+											}}
+										>
+											<img
+												src={m().avatarUrl}
+												alt={m().authorName}
+												style={{
+													width: "100%",
+													height: "100%",
+													"border-radius": "50%",
+													display: "block",
+												}}
+											/>
+										</button>
+										<div
+											style={{
+												background: "white",
+												padding: "4px 8px",
+												"border-radius": "6px",
+												"box-shadow": "0 2px 4px rgba(0,0,0,0.1)",
+												display: "flex",
+												"flex-direction": "column",
+												"align-items": "center",
+												gap: "2px",
+												"max-width": "120px",
+												"pointer-events": "none",
+											}}
+										>
+											<div
+												style={{
+													"font-weight": "bold",
+													"font-size": "13px",
+													color: "#1f2937",
+													"text-align": "center",
+													"word-break": "break-word",
+												}}
+											>
+												{m().keywords}
+											</div>
+											<div
+												style={{
+													"font-size": "11px",
+													color: "#6b7280",
+													opacity: "0.8",
+													"text-align": "center",
+													"word-break": "break-word",
+												}}
+											>
+												{m().postText.slice(0, 15)}
+												{m().postText.length > 15 ? "..." : ""}
+											</div>
+										</div>
+									</div>
 								)}
 							</Show>
 						);
