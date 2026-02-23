@@ -1,5 +1,6 @@
-import type { AppBskyFeedPost } from "@atcute/bluesky";
+import { AppBskyFeedPost } from "@atcute/bluesky";
 import {
+	is,
 	isResourceUri,
 	parseResourceUri,
 	type ResourceUri,
@@ -11,6 +12,7 @@ import { HNSW } from "hnsw";
 import { createSignal, onMount, Show } from "solid-js";
 import { createStore } from "solid-js/store";
 import { getVec } from "../lib/Embedding";
+import { extractKeywords } from "../lib/Keyword";
 import { resolveAuthorFeed, writeIndex } from "../lib/Resolver";
 import GraphView from "./GraphView";
 
@@ -40,6 +42,18 @@ export default function AppViewMode(props: { agent: Agent }) {
 
 	const vectorMap = new Map<string, number[]>();
 
+	const addEntries = async (items: { node: GraphNode; vector: number[] }[]) => {
+		const idx = index();
+		if (!idx) return;
+		for (const { node, vector } of items) {
+			if (vectorMap.has(node.postUri)) continue;
+			setMetaMap(node.postUri, node);
+			vectorMap.set(node.postUri, vector);
+			// @ts-expect-error
+			await idx.addPoint(node.postUri, vector);
+		}
+	};
+
 	onMount(async () => {
 		setIsLoading(true);
 		setErrorMessage("");
@@ -51,26 +65,21 @@ export default function AppViewMode(props: { agent: Agent }) {
 				return;
 			}
 
-			const tl = await props.agent.getTimeline({ limit: 100 });
-
 			const feedItems = feed.data.feed.filter(
-				(r) => (r.post.record.text as string) !== "",
+				(r) =>
+					is(AppBskyFeedPost.mainSchema, r.post.record) &&
+					r.post.record.text !== "",
 			);
 
-			const tlItems = tl.data.feed.filter(
-				(r) => (r.post.record.text as string) !== "",
-			);
-
-			const seen = new Set<string>();
-			const all = [...tlItems, ...feedItems].filter((item) => {
-				if (seen.has(item.post.uri)) return false;
-				seen.add(item.post.uri);
-				return true;
-			});
+			if (feedItems.length === 0) {
+				setErrorMessage("表示できる投稿がありません");
+				return;
+			}
 
 			const entries = await Promise.all(
-				all.map(async (item) => {
-					const record = item.post.record as AppBskyFeedPost.Main;
+				feedItems.map(async (item) => {
+					if (!is(AppBskyFeedPost.mainSchema, item.post.record)) return null;
+					const record = item.post.record;
 					const node: GraphNode = {
 						postUri: item.post.uri,
 						did: item.post.author.did,
@@ -84,25 +93,28 @@ export default function AppViewMode(props: { agent: Agent }) {
 				}),
 			);
 
-			if (entries.length === 0) {
+			const validEntries = entries.filter(
+				(e): e is { node: GraphNode; vector: number[] } => e !== null,
+			);
+
+			if (validEntries.length === 0) {
 				setErrorMessage("表示できる投稿がありません");
 				return;
 			}
 
-			const index = new HNSW(16, 200, entries[0].vector.length, "cosine");
-			setIndex(index);
-			await index.buildIndex(
+			const idx = new HNSW(16, 200, validEntries[0].vector.length, "cosine");
+			setIndex(idx);
+			await idx.buildIndex(
 				// @ts-expect-error
-				entries.map(({ node, vector }) => {
+				validEntries.map(({ node, vector }) => {
 					setMetaMap(node.postUri, node);
 					vectorMap.set(node.postUri, vector);
 					return { id: node.postUri, vector };
 				}),
 			);
 
-			const seed = entries[0].node;
-			setSelected(seed.postUri);
-			exploreNode();
+			setSelected(validEntries[0].node.postUri);
+			await exploreNode();
 		} catch (e) {
 			console.error(e);
 			setErrorMessage("フィードの取得に失敗しました");
@@ -124,12 +136,52 @@ export default function AppViewMode(props: { agent: Agent }) {
 		await writeIndex(rkey, subjects, props.agent);
 	};
 
-	const exploreNode = () => {
+	const exploreNode = async () => {
 		const id = selected();
 		const idx = index();
 		if (!idx || !id) return;
+
+		const node = metaMap[id];
+		if (!node) return;
+
 		const vector = vectorMap.get(id);
 		if (!vector) return;
+
+		const query = await extractKeywords(node.postText, vector);
+		const searchResult = await props.agent.app.bsky.feed.searchPosts({
+			q: query,
+			limit: 25,
+		});
+
+		const newEntries = await Promise.all(
+			searchResult.data.posts
+				.filter(
+					(p) =>
+						!vectorMap.has(p.uri) &&
+						is(AppBskyFeedPost.mainSchema, p.record) &&
+						p.record.text !== "",
+				)
+				.map(async (p) => {
+					if (!is(AppBskyFeedPost.mainSchema, p.record)) return null;
+					const record = p.record;
+					const n: GraphNode = {
+						postUri: p.uri,
+						did: p.author.did,
+						avatarUrl: p.author.avatar!,
+						postText: record.text,
+						authorName: p.author.displayName!,
+						createdAt: record.createdAt,
+					};
+					const vector: number[] = Array.from(await getVec(record.text));
+					return { node: n, vector };
+				}),
+		);
+
+		await addEntries(
+			newEntries.filter(
+				(e): e is { node: GraphNode; vector: number[] } => e !== null,
+			),
+		);
 
 		const results = idx.searchKNN(vector, 51);
 		const neighbors = results
